@@ -1,0 +1,53 @@
+/**
+ * Minimal reset + base document rules. Global only — no feature/screen
+ * specific rules belong here (those live in each feature/screen's own
+ * co-located .css file).
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+/* Feature/screen mount slots are invisible structural anchors. */
+.feature-slot {
+  display: contents;
+}
+
+/* Generic visibility utility, used across features/screens. */
+.hidden {
+  display: none !important;
+}

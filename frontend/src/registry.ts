@@ -1,33 +1,24 @@
 /**
  * Feature registry.
  *
- * This is the ONLY file that changes when a new feature is added.
+ * This is the ONLY file that changes when a new top-level feature is added.
  * Import the feature, add one line to the array — nothing else.
  *
  * main.ts never changes.
+ *
+ * Post-Warble-rework, most of the app's screens live under screens/registry.ts
+ * instead — this array only holds the persistent app chrome (app-shell) and
+ * features that aren't tied to a single navigable screen (audio-preflight,
+ * whose modal can be opened from multiple screens).
  */
 import { type Feature } from './feature-types';
 
-import { onboardingFeature } from './features/onboarding/index';
-import { scoreLoaderFeature  } from './features/score-loader/index';
-import { playbackFeature     } from './features/playback/index';
-import { partSelectorFeature } from './features/part-selector/index';
-import { partMixerFeature } from './features/part-mixer/index';
-import { pitchOverlayFeature } from './features/pitch-overlay/index';
+import { appShellFeature } from './features/app-shell/index';
 import { audioPreflightFeature } from './features/audio-preflight/index';
-import { progressHistoryFeature } from './features/progress-history/index';
-import { transcriptionFeature } from './features/transcription/index';
 
 export type { Feature } from './feature-types';
 
 export const features: Feature[] = [
-  onboardingFeature,
-  scoreLoaderFeature,
-  playbackFeature,
-  partSelectorFeature,
-  partMixerFeature,
-  pitchOverlayFeature,
+  appShellFeature,
   audioPreflightFeature,
-  progressHistoryFeature,
-  transcriptionFeature,
 ];

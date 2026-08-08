@@ -1,0 +1,74 @@
+/**
+ * App shell layout: header, nav rail (desktop) / bottom tab bar (narrow),
+ * and the screen container that features/app-shell mounts Screens into.
+ *
+ * Structural rules only — visual styling for individual nav items etc.
+ * lives in features/app-shell/app-shell.css.
+ */
+#app-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#app-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+#app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+#app-nav {
+  flex-shrink: 0;
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-3);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+#screen-root {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Focus mode (exercise player / range test): hide the nav rail, collapse
+   the header to just a back control + step progress. Toggled by
+   features/app-shell via a class on #app-shell. */
+#app-shell.focus-mode #app-nav {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  #app-body {
+    flex-direction: column-reverse;
+  }
+  #app-nav {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: var(--space-2);
+    border-right: none;
+    border-top: 1px solid var(--color-border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
