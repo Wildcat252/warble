@@ -33,6 +33,19 @@ export async function ensureAudioPreflightReady(): Promise<boolean> {
   return completed;
 }
 
+/**
+ * Always opens the mic/audio setup modal, regardless of whether it was
+ * already completed this session — for the Settings screen's "Open mic
+ * setup" button, where the user is deliberately revisiting it to change
+ * device/voice type/latency, not being gated on first use.
+ * ensureAudioPreflightReady() is for that gating case and short-circuits
+ * once already completed, which is exactly wrong for "let me adjust this."
+ */
+export function openAudioPreflightModal(): Promise<boolean> {
+  if (!openPreflightModal) return Promise.resolve(false);
+  return openPreflightModal();
+}
+
 export function loadPreflightDeviceId(): string | null {
   const storage = getStorage();
   if (!storage) return null;

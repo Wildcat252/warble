@@ -34,7 +34,7 @@ import { midiToFrequency, midiToNoteName } from '../../pitch/note-name';
 import { getVoiceTypeById } from '../../pitch/voice-type';
 import { TonePlayer } from '../../audio/tone-player';
 import { getAudioContext } from '../../services/audio-context';
-import { ensureAudioPreflightReady, loadUserVoiceTypeId } from '../../services/audio-preflight';
+import { loadUserVoiceTypeId } from '../../services/audio-preflight';
 import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';
 import '../../screens/placeholder.css'; // shares .screen-placeholder/.card for the not-found state
@@ -331,14 +331,14 @@ async function start(): Promise<void> {
   if (!els || !definition) return;
   const def = definition;
 
-  els.status.textContent = 'Checking microphone…';
-  const ready = await ensureAudioPreflightReady();
-  if (stopped) return; // unmounted while awaiting preflight
-  if (!ready) {
-    els.status.textContent = 'Microphone setup is required to start this exercise.';
-    return;
-  }
-
+  // No mic-setup gate here on purpose — the audio-preflight modal used to
+  // pop up before every exercise (via ensureAudioPreflightReady()), which
+  // is a jarring interruption for something users only need to touch
+  // occasionally. Mic device/voice-type/latency setup now lives in
+  // Settings (screens/settings/index.ts), opened deliberately, not forced.
+  // The actual pitch capture happens backend-side via Python/sounddevice
+  // regardless — this modal was always onboarding UX, never a functional
+  // requirement for /playback/start to work.
   const anchorMidi = resolveAnchorMidi();
   targets = def.generate({ anchorMidi });
   renderProgressDots();

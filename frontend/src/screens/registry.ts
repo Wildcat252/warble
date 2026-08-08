@@ -13,6 +13,7 @@ import { homeScreen } from './home/index';
 import { createPlaceholderScreen } from './placeholder';
 import { exercisePlayerScreen } from '../features/exercise-player/index';
 import { exercisePickerScreen } from './exercise-picker/index';
+import { settingsScreen } from './settings/index';
 
 const screens: Record<ScreenId, Screen> = {
   home: homeScreen,
@@ -33,11 +34,7 @@ const screens: Record<ScreenId, Screen> = {
     'Progress',
     'Coming in a later build phase — your practice streak, XP trend, and vocal range history.',
   ),
-  settings: createPlaceholderScreen(
-    'settings',
-    'Settings',
-    'Coming in a later build phase — mic device, voice type, and pitch-detection tuning.',
-  ),
+  settings: settingsScreen,
 };
 
 export function getScreen(id: ScreenId): Screen {

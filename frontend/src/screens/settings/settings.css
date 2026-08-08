@@ -1,0 +1,36 @@
+.settings-screen {
+  padding: var(--space-6);
+  max-width: 680px;
+  margin: 0 auto;
+}
+.settings-screen__header h1 {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-1);
+}
+.settings-screen__header p {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-5);
+}
+
+.settings-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+.settings-card__text h2 {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-1);
+}
+.settings-card__text p {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.settings-card__hint {
+  margin-top: var(--space-2);
+}
+.settings-card__hint strong {
+  color: var(--color-text);
+}
