@@ -14,14 +14,11 @@ import { createPlaceholderScreen } from './placeholder';
 import { exercisePlayerScreen } from '../features/exercise-player/index';
 import { exercisePickerScreen } from './exercise-picker/index';
 import { settingsScreen } from './settings/index';
+import { rangeTestScreen } from '../features/range-test/index';
 
 const screens: Record<ScreenId, Screen> = {
   home: homeScreen,
-  'range-test': createPlaceholderScreen(
-    'range-test',
-    'Vocal Range Test',
-    'Coming in a later build phase — sing your lowest and highest comfortable notes to find your voice type.',
-  ),
+  'range-test': rangeTestScreen,
   'exercise-picker': exercisePickerScreen,
   'exercise-player': exercisePlayerScreen,
   results: createPlaceholderScreen(

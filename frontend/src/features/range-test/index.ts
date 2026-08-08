@@ -1,0 +1,282 @@
+/**
+ * Vocal Range Test — a short guided flow: glide down to your lowest
+ * comfortable note, then up to your highest, and get a voice-type
+ * suggestion from the measured range.
+ *
+ * Like exercise-player, this owns its own capture/clock loop end-to-end
+ * (no playback-sync/timeline-sync — see that file's comment for why) and,
+ * per the same UX decision that removed the auto-popup mic modal from
+ * exercise start, does NOT gate itself on audio-preflight either — it just
+ * starts capturing.
+ *
+ * Each phase asks for a brief GLIDE, not a single static held note.
+ * classifyVoiceType() (pitch/voice-type.ts) requires 10 distinct stable
+ * notes before it'll suggest a voice type — a deliberate quality gate that
+ * fits its original use (range tracked incidentally over a whole practice
+ * session) poorly for a dedicated 2-endpoint test. A short slide up/down
+ * naturally passes through several notes, making that threshold realistic
+ * to reach in a few seconds; if it still isn't reached, the reveal screen
+ * falls back to showing the measured low/high without a voice-type guess
+ * rather than failing outright.
+ */
+import type { Screen } from '../../screen-types';
+import { navigate, goBack } from '../../navigation/router';
+import { SessionRangeTracker } from '../../pitch/session-range';
+import { classifyVoiceType } from '../../pitch/voice-type';
+import { persistUserVoiceTypeId } from '../../services/audio-preflight';
+import { PitchConnection } from '../../pitch/pitch-connection';
+import type { PitchFrame } from '../../pitch/socket';
+import { MIN_CONFIDENCE_FOR_DOT } from '../../pitch/accuracy';
+import { midiToNoteName } from '../../pitch/note-name';
+import { getAudioContext } from '../../services/audio-context';
+import { startPlayback, postPlayback } from '../../transport/controls';
+import { setAppStatus } from '../../services/status';
+import './range-test.css';
+
+type Stage = 'intro' | 'low' | 'high' | 'reveal';
+
+const PHASE_DURATION_MS = 6000;
+
+let stage: Stage = 'intro';
+let tracker: SessionRangeTracker | null = null;
+let connection: PitchConnection | null = null;
+let playbackStarted = false;
+let stopped = false;
+let phaseTimer: number | null = null;
+let phaseStartedAtMs = 0;
+let phaseRafId: number | null = null;
+let container: HTMLElement | null = null;
+
+function resetState(): void {
+  stage = 'intro';
+  tracker = null;
+  connection = null;
+  playbackStarted = false;
+  stopped = false;
+  phaseTimer = null;
+  phaseStartedAtMs = 0;
+  phaseRafId = null;
+  container = null;
+}
+
+function clearPhaseTimer(): void {
+  if (phaseTimer !== null) {
+    window.clearTimeout(phaseTimer);
+    phaseTimer = null;
+  }
+  if (phaseRafId !== null) {
+    cancelAnimationFrame(phaseRafId);
+    phaseRafId = null;
+  }
+}
+
+function render(): void {
+  if (!container) return;
+  if (stage === 'intro') return renderIntro(container);
+  if (stage === 'low' || stage === 'high') return renderCapture(container);
+  renderReveal(container);
+}
+
+function renderIntro(root: HTMLElement): void {
+  root.innerHTML = `
+    <div class="range-test range-test--intro fade-in">
+      <div class="card range-test__card">
+        <span class="range-test__icon" aria-hidden="true">🎚️</span>
+        <h1>Find your voice type</h1>
+        <p>You'll glide down to your lowest comfortable note, then up to your highest. No need to strain — comfortable is better than extreme.</p>
+        <button type="button" class="btn btn-primary" id="range-test-begin">Begin</button>
+      </div>
+    </div>
+  `;
+  root.querySelector<HTMLButtonElement>('#range-test-begin')?.addEventListener('click', () => {
+    void beginCapture();
+  });
+}
+
+function renderCapture(root: HTMLElement): void {
+  const isLow = stage === 'low';
+  root.innerHTML = `
+    <div class="range-test fade-in">
+      <div class="range-test__prompt">
+        <h1>${isLow ? 'Glide down to your lowest note' : 'Now glide up to your highest note'}</h1>
+        <p>${isLow ? 'Start comfortable, then slide down as low as you can, and hold there.' : 'Slide up as high as you can comfortably reach, and hold there.'}</p>
+      </div>
+      <div class="range-test__progress-track"><div class="range-test__progress-fill" id="range-test-progress"></div></div>
+      <div class="card range-test__readout-card">
+        <div class="range-test__detected" id="range-test-detected">Detected: —</div>
+        <div class="range-test__span" id="range-test-span">Captured range: —</div>
+      </div>
+      <button type="button" class="btn btn-secondary" id="range-test-next">
+        ${isLow ? "Got it, that's my lowest" : "Got it, that's my highest"}
+      </button>
+    </div>
+  `;
+  root.querySelector<HTMLButtonElement>('#range-test-next')?.addEventListener('click', () => {
+    advanceStage();
+  });
+}
+
+function renderReveal(root: HTMLElement): void {
+  const summary = tracker?.summary() ?? null;
+  const voiceType = summary
+    ? classifyVoiceType({ lowestMidi: summary.lowMidi, highestMidi: summary.highMidi, stableNoteCount: summary.stableNoteCount })
+    : null;
+
+  const rangeText = summary ? `${midiToNoteName(summary.lowMidi)} – ${midiToNoteName(summary.highMidi)}` : 'Not enough signal captured';
+
+  root.innerHTML = `
+    <div class="range-test range-test--reveal fade-in">
+      <div class="card range-test__card">
+        ${voiceType
+    ? `<span class="range-test__icon" aria-hidden="true">🎉</span><h1>You're a ${voiceType.label}!</h1>`
+    : `<span class="range-test__icon" aria-hidden="true">🎚️</span><h1>Here's your measured range</h1>`
+}
+        <p class="range-test__range-readout">${rangeText}</p>
+        ${!voiceType && summary
+    ? '<p class="range-test__hint">Not quite enough distinct notes for a voice-type suggestion this time — try gliding a little slower next time.</p>'
+    : ''
+}
+        ${!summary ? '<p class="range-test__hint">We couldn\'t detect enough of your voice — check your mic in Settings and try again.</p>' : ''}
+        <div class="range-test__actions">
+          ${voiceType ? '<button type="button" class="btn btn-primary" id="range-test-save">Save as my voice type</button>' : ''}
+          <button type="button" class="btn btn-secondary" id="range-test-done">${voiceType ? 'Skip' : 'Done'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  root.querySelector<HTMLButtonElement>('#range-test-save')?.addEventListener('click', () => {
+    if (voiceType) persistUserVoiceTypeId(voiceType.id);
+    navigate('home');
+  });
+  root.querySelector<HTMLButtonElement>('#range-test-done')?.addEventListener('click', () => {
+    navigate('home');
+  });
+}
+
+function updateCaptureReadout(frame: PitchFrame | null): void {
+  if (!container) return;
+  const detectedEl = container.querySelector<HTMLElement>('#range-test-detected');
+  const spanEl = container.querySelector<HTMLElement>('#range-test-span');
+  if (detectedEl) {
+    detectedEl.textContent = frame && frame.conf >= MIN_CONFIDENCE_FOR_DOT
+      ? `Detected: ${midiToNoteName(frame.midi)}`
+      : 'Detected: —';
+  }
+  if (spanEl) {
+    const summary = tracker?.summary() ?? null;
+    spanEl.textContent = summary
+      ? `Captured range: ${midiToNoteName(summary.lowMidi)} – ${midiToNoteName(summary.highMidi)}`
+      : 'Captured range: —';
+  }
+}
+
+function updateProgressBar(): void {
+  if (!container) return;
+  const fillEl = container.querySelector<HTMLElement>('#range-test-progress');
+  if (!fillEl) return;
+  const elapsed = performance.now() - phaseStartedAtMs;
+  const pct = Math.max(0, Math.min(100, (elapsed / PHASE_DURATION_MS) * 100));
+  fillEl.style.width = `${pct}%`;
+  if (elapsed < PHASE_DURATION_MS && !stopped) {
+    phaseRafId = requestAnimationFrame(updateProgressBar);
+  }
+}
+
+function handleFrame(frame: PitchFrame): void {
+  if (!tracker) return;
+  tracker.ingest(frame, MIN_CONFIDENCE_FOR_DOT);
+  updateCaptureReadout(frame);
+}
+
+function startPhaseTimer(): void {
+  clearPhaseTimer();
+  phaseStartedAtMs = performance.now();
+  phaseRafId = requestAnimationFrame(updateProgressBar);
+  phaseTimer = window.setTimeout(() => {
+    advanceStage();
+  }, PHASE_DURATION_MS);
+}
+
+function advanceStage(): void {
+  if (stopped) return;
+  clearPhaseTimer();
+  if (stage === 'low') {
+    stage = 'high';
+    render();
+    startPhaseTimer();
+    return;
+  }
+  if (stage === 'high') {
+    finishCapture();
+  }
+}
+
+function finishCapture(): void {
+  stage = 'reveal';
+  connection?.close();
+  connection = null;
+  if (playbackStarted) void postPlayback('/playback/stop').catch(() => {});
+  render();
+}
+
+async function beginCapture(): Promise<void> {
+  tracker = new SessionRangeTracker();
+  stage = 'low';
+  render();
+
+  try {
+    const ctx = getAudioContext();
+    // Same suspended-clock pitfall as exercise-player — resume() before
+    // anything that depends on real-time progressing matters here too,
+    // even though this screen's own clock is just a UI countdown (not a
+    // scoring anchor), because starting the tone/analysis pipeline while
+    // still suspended would delay the very first frames.
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    await startPlayback(null);
+    playbackStarted = true;
+  } catch (err) {
+    setAppStatus('range test start failed', 'error');
+    if (container) {
+      container.innerHTML = `
+        <div class="range-test range-test--intro fade-in">
+          <div class="card range-test__card">
+            <h1>Couldn't start</h1>
+            <p>${String(err)}</p>
+            <button type="button" class="btn btn-secondary" id="range-test-back">Back</button>
+          </div>
+        </div>
+      `;
+      container.querySelector<HTMLButtonElement>('#range-test-back')?.addEventListener('click', () => goBack());
+    }
+    return;
+  }
+  if (stopped) return; // unmounted mid-start
+
+  connection = new PitchConnection({ onFrame: handleFrame });
+  connection.connect();
+  startPhaseTimer();
+}
+
+function mount(root: HTMLElement): void {
+  resetState();
+  container = root;
+  render();
+}
+
+function unmount(): void {
+  stopped = true;
+  clearPhaseTimer();
+  connection?.close();
+  connection = null;
+  if (playbackStarted) void postPlayback('/playback/stop').catch(() => {});
+  container = null;
+}
+
+export const rangeTestScreen: Screen = {
+  id: 'range-test',
+  mount,
+  unmount,
+};

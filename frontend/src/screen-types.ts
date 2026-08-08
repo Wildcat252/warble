@@ -19,10 +19,11 @@ export type ScreenId =
 /**
  * True for screens that should hide the nav rail/tab bar (full-screen focus
  * mode). Only screens with a REAL immersive flow belong here — 'range-test'
- * is added back once its Phase 5 guided flow lands; until then the
- * placeholder card needs the nav visible so it's not a dead end.
+ * was excluded while it was still a placeholder card (nothing to focus on,
+ * nav needed to be visible so it wasn't a dead end); its Phase 5 guided
+ * flow is real now, so it's back.
  */
-export const FOCUS_MODE_SCREENS: ReadonlySet<ScreenId> = new Set(['exercise-player']);
+export const FOCUS_MODE_SCREENS: ReadonlySet<ScreenId> = new Set(['exercise-player', 'range-test']);
 
 export interface Screen {
   id: ScreenId;
