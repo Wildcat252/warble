@@ -34,7 +34,7 @@ import { midiToFrequency, midiToNoteName } from '../../pitch/note-name';
 import { getVoiceTypeById } from '../../pitch/voice-type';
 import { TonePlayer } from '../../audio/tone-player';
 import { getAudioContext } from '../../services/audio-context';
-import { ensureAudioPreflightReady, loadPreflightDeviceId, loadUserVoiceTypeId } from '../../services/audio-preflight';
+import { ensureAudioPreflightReady, loadUserVoiceTypeId } from '../../services/audio-preflight';
 import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';
 import '../../screens/placeholder.css'; // shares .screen-placeholder/.card for the not-found state
@@ -86,11 +86,25 @@ function resetState(): void {
   perTargetResults = [];
 }
 
+/**
+ * Always null — /playback/start's device_id must be a `sounddevice`
+ * (PortAudio) integer index, from the backend's own /audio/devices list.
+ * services/audio-preflight.ts's stored device id is a BROWSER
+ * `navigator.mediaDevices` deviceId (an opaque hash string, used for the
+ * preflight modal's own getUserMedia level-meter check) — a completely
+ * different numbering scheme. An earlier version of this function
+ * `parseInt()`'d that hash string, which for many devices "succeeds" with
+ * a small-looking number that isn't a real backend device index, and the
+ * backend would crash opening the wrong device
+ * (sounddevice.PortAudioError, PaErrorCode -9986).
+ * `null` here means "use the backend's own default input device," which
+ * is what most users want anyway. Phase 8 (Settings screen) is where a
+ * real backend-device-list-driven picker belongs, fed by /audio/devices
+ * like the old features/pitch-overlay settings panel did — not this
+ * shortcut.
+ */
 function resolveDeviceId(): number | null {
-  const raw = loadPreflightDeviceId();
-  if (raw === null) return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isNaN(parsed) ? null : parsed;
+  return null;
 }
 
 function resolveAnchorMidi(): number {
