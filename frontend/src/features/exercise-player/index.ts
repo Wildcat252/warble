@@ -346,6 +346,9 @@ async function start(): Promise<void> {
   graph = new PitchGraphCanvas(els.graphContainer, { bandCentsTolerance: GREEN_CENTS_THRESHOLD });
   const range = rangeFromTargets(targets);
   graph.setRange(midiToFrequency(range.minMidi), midiToFrequency(range.maxMidi));
+  // Full target list up front (not just the active one) so the "note
+  // highway" can render upcoming pills ahead of the playhead.
+  graph.setTargets(targets);
 
   tonePlayer = new TonePlayer();
   if (def.scoringStrategy === 'stable-hold') {

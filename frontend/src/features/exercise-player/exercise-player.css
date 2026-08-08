@@ -48,10 +48,9 @@
   text-align: center;
 }
 
-/* Card frame around the graph — the canvas itself keeps its own dark
- * "instrument display" background (pitch/graph.ts, unchanged), styled here
- * as a deliberate embedded-screen look rather than a mismatched leftover
- * dark box against the light page. */
+/* Card frame around the graph — pitch/graph.ts renders its own light,
+ * "note highway" style background (rainbow pitch scale, dotted grid), this
+ * just gives it a bordered card frame consistent with the rest of the page. */
 .exercise-player__graph-card {
   padding: var(--space-4);
   display: flex;
