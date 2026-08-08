@@ -37,12 +37,25 @@ log = logging.getLogger(__name__)
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 SAMPLE_RATE: int = 22050
-# Was 0.6 — lowered after a live diagnostic session showed a legitimate,
-# clearly-voiced mid-range note (471Hz/A4-ish) scoring conf=0.549 and
-# getting silently dropped. 0.6 was rejecting real signal, not just noise.
-# See the "pYIN dropped frame" diagnostic log line below for how this was
-# measured; re-tune with real data if this still isn't right.
-CONFIDENCE_THRESHOLD: float = 0.5
+# Chosen from measured separation between real singing and an ambient room,
+# captured through this exact pipeline (see the center=False note in
+# _infer_pyin for the companion fix — both were needed):
+#
+#                     median conf   max conf   fraction >= 0.25
+#   ambient room         0.010        0.109          0%
+#   real singing         0.280        0.485        ~58%
+#
+# pYIN's voiced_prob is quantised to discrete HMM posterior levels
+# (0.010, 0.109, 0.207, 0.280, 0.372, 0.426, 0.485, 0.549, ...), and real
+# voice through a laptop mic tops out around 0.485 — so the previous 0.6,
+# and even 0.5, accepted literally 0% of real singing while ambient noise
+# was never above 0.109. 0.25 sits with margin on both sides.
+#
+# Deliberately NOT paired with an absolute amplitude gate: pYIN's confidence
+# is a periodicity measure and is essentially level-independent (synthetic
+# tones at peak 0.2 and 0.03 score identically), so gating on loudness would
+# add a new failure mode for quiet mics without improving noise rejection.
+CONFIDENCE_THRESHOLD: float = 0.25
 
 # torchcrepe expects 16 kHz — we resample on the fly
 CREPE_SAMPLE_RATE: int = 16000

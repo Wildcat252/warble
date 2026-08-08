@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AMBER_CENTS_THRESHOLD,
   GREEN_CENTS_THRESHOLD,
+  MIN_CONFIDENCE_FOR_DOT,
   centsOffPitch,
   classifyByCents,
   classifyPitchColor,
@@ -33,8 +34,11 @@ describe('expectedNoteAtBeat', () => {
 });
 
 describe('classifyPitchColor', () => {
-  it('returns grey for low confidence (below MIN_CONFIDENCE_FOR_DOT, currently 0.5)', () => {
-    expect(classifyPitchColor(60, 60, 0.49)).toBe('grey');
+  it('returns grey below MIN_CONFIDENCE_FOR_DOT, and colours at/above it', () => {
+    // Derived from the constant rather than hardcoded, so retuning the
+    // confidence threshold against real-mic data doesn't break this test.
+    expect(classifyPitchColor(60, 60, MIN_CONFIDENCE_FOR_DOT - 0.01)).toBe('grey');
+    expect(classifyPitchColor(60, 60, MIN_CONFIDENCE_FOR_DOT)).toBe('green');
   });
 
   // Rest suppression is enforced by PitchOverlay.pushFrame() which checks

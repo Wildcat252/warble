@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { NoteModel, TempoMark } from '../score/renderer';
 import { PhraseSummaryTracker, segmentPhrases } from './phrase-summary';
+import { MIN_CONFIDENCE_FOR_SUMMARY } from './accuracy';
+
+/** Comfortably below the summary confidence cutoff, without hardcoding its value. */
+const BELOW_SUMMARY_CONF = MIN_CONFIDENCE_FOR_SUMMARY / 2;
 
 const tempo: TempoMark[] = [{ beat: 0, bpm: 120 }];
 
@@ -79,10 +83,10 @@ describe('PhraseSummaryTracker', () => {
     // The summary should reflect zero qualifying samples, so withinTolerancePct = 0
     // and sampleCount = 0 on the note (not inflated by the low-conf frames).
     const frames = [
-      { t: 200, midi: 62.0, conf: 0.3 }, // below MIN_CONFIDENCE_FOR_SUMMARY (0.55)
-      { t: 400, midi: 62.0, conf: 0.4 },
-      { t: 600, midi: 62.0, conf: 0.3 },
-      { t: 800, midi: 62.0, conf: 0.4 },
+      { t: 200, midi: 62.0, conf: BELOW_SUMMARY_CONF },
+      { t: 400, midi: 62.0, conf: BELOW_SUMMARY_CONF },
+      { t: 600, midi: 62.0, conf: BELOW_SUMMARY_CONF },
+      { t: 800, midi: 62.0, conf: BELOW_SUMMARY_CONF },
       // cross boundary
       { t: 1100, midi: 60.0, conf: 0.9 },
     ];
