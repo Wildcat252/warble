@@ -126,11 +126,13 @@ function renderShell(container: HTMLElement, def: ExerciseDefinition): void {
         <div class="exercise-player__progress" id="ex-progress-dots"></div>
       </div>
       <div class="exercise-player__status" id="ex-status" aria-live="polite">Getting ready…</div>
-      <div class="exercise-player__readouts">
-        <div class="exercise-player__target" id="ex-target">Target: —</div>
-        <div class="exercise-player__detected" id="ex-detected">Detected: —</div>
+      <div class="exercise-player__graph-card card">
+        <div class="exercise-player__readouts">
+          <div class="exercise-player__target" id="ex-target">Target: —</div>
+          <div class="exercise-player__detected" id="ex-detected">Detected: —</div>
+        </div>
+        <div class="exercise-player__graph" id="ex-graph"></div>
       </div>
-      <div class="exercise-player__graph" id="ex-graph"></div>
       <div class="exercise-player__summary hidden" id="ex-summary"></div>
     </div>
   `;
@@ -339,6 +341,16 @@ async function start(): Promise<void> {
   els.status.textContent = 'Starting…';
   try {
     const ctx = getAudioContext();
+    // AudioContext starts (or resumes) in a "suspended" state until a user
+    // gesture unlocks it, and its currentTime is FROZEN while suspended —
+    // anchoring startAudioTimeSec before resume() completes would freeze
+    // elapsedSec at ~0 for the rest of the exercise (graph never advances,
+    // scoring windows never close). Clicking into this exercise was itself
+    // a user gesture, so resume() reliably succeeds here; just await it
+    // before reading currentTime for the anchor.
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
     startAudioTimeSec = ctx.currentTime;
     await startPlayback(resolveDeviceId());
     playbackStarted = true;

@@ -433,10 +433,10 @@ function buildModal(): HTMLDivElement {
       <div class="audio-preflight-tip">🎧 Use headphones to avoid feedback and mic bleed.</div>
       <div id="audio-preflight-error" class="audio-preflight-error" role="alert"></div>
       <div class="audio-preflight-actions">
-        <button id="audio-preflight-cancel" class="transport-btn">Cancel</button>
-        <button id="audio-preflight-request" class="transport-btn">Allow microphone</button>
-        <button id="audio-preflight-test" class="transport-btn">Test my mic</button>
-        <button id="audio-preflight-continue" class="transport-btn" disabled>Start rehearsal</button>
+        <button id="audio-preflight-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="audio-preflight-request" class="btn btn-secondary">Allow microphone</button>
+        <button id="audio-preflight-test" class="btn btn-secondary">Test my mic</button>
+        <button id="audio-preflight-continue" class="btn btn-primary" disabled>Start rehearsal</button>
       </div>
     </div>
   `;
@@ -450,46 +450,72 @@ function ensureStyles(): void {
   style.id = 'audio-preflight-style';
   style.textContent = `
     .audio-preflight.hidden { display: none; }
-    .audio-preflight { position: fixed; inset: 0; z-index: 3000; }
-    .audio-preflight-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
+    .audio-preflight {
+      position: fixed; inset: 0; z-index: 3000;
+      display: flex; align-items: center; justify-content: center;
+      padding: var(--space-5);
+    }
+    .audio-preflight-backdrop { position: absolute; inset: 0; background: rgba(43, 36, 56, 0.45); }
     .audio-preflight-dialog {
       position: relative;
-      margin: 8vh auto;
-      max-width: 560px;
-      background: #101726;
-      color: #eaf6ff;
-      border: 1px solid #2f5f88;
-      border-radius: 10px;
-      padding: 16px;
-      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.35);
+      width: min(560px, 100%);
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+      background: var(--color-surface);
+      color: var(--color-text);
+      border-radius: var(--radius-xl);
+      padding: var(--space-6);
+      box-shadow: var(--shadow-lg);
     }
-    .audio-preflight-help { margin-top: 0; color: #b9d8ef; }
+    .audio-preflight-dialog h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
+    .audio-preflight-help { margin-top: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
     .audio-preflight-close {
       position: absolute;
-      top: 8px;
-      right: 8px;
-      border: 1px solid #2f5f88;
-      border-radius: 6px;
-      background: transparent;
-      color: #eaf6ff;
+      top: var(--space-3);
+      right: var(--space-3);
+      border: none;
+      border-radius: var(--radius-full);
+      background: var(--color-surface-alt);
+      color: var(--color-text-muted);
+      width: 32px;
+      height: 32px;
       font-size: 1rem;
       line-height: 1;
-      padding: 4px 8px;
       cursor: pointer;
     }
-    .audio-preflight-close:hover { background: rgba(255, 255, 255, 0.1); }
-    .audio-preflight-row { display: grid; grid-template-columns: 170px 1fr; gap: 10px; align-items: center; margin: 10px 0; }
-    .audio-meter { height: 12px; border-radius: 10px; border: 1px solid #1a5276; background: #111; overflow: hidden; }
-    .audio-meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c); transition: width 60ms linear; }
-    .audio-meter-peak { margin-top: 6px; font-size: 0.9rem; color: #b9d8ef; }
-    .audio-preflight-tip, .audio-preflight-status, .audio-preflight-test-result { background: #15293f; border: 1px solid #254f75; border-radius: 6px; padding: 8px; margin: 10px 0; }
-    .audio-preflight-test-result[data-state="good"] { border-color: #2ecc71; color: #b8f7cc; }
-    .audio-preflight-test-result[data-state="too-quiet"], .audio-preflight-test-result[data-state="too-loud"] { border-color: #f1c40f; color: #ffe7a0; }
-    .audio-preflight-test-result[data-state="no-signal"] { border-color: #e74c3c; color: #ffb0a8; }
-    .audio-preflight-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .audio-preflight-error { min-height: 1.2em; color: #ff8e8e; }
+    .audio-preflight-close:hover { background: var(--color-border); color: var(--color-text); }
+    .audio-preflight-row {
+      display: grid; grid-template-columns: 150px 1fr; gap: var(--space-3);
+      align-items: center; margin: var(--space-3) 0; font-size: var(--text-sm);
+    }
+    .audio-preflight-row label { color: var(--color-text-muted); font-weight: var(--font-semibold); }
+    .audio-preflight-dialog select {
+      width: 100%;
+      background: var(--color-surface-alt);
+      color: var(--color-text);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      padding: var(--space-2) var(--space-3);
+      font-size: var(--text-sm);
+    }
+    .audio-meter { height: 12px; border-radius: var(--radius-full); border: 1px solid var(--color-border); background: var(--color-surface-alt); overflow: hidden; }
+    .audio-meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--color-good), var(--color-warn), var(--color-bad)); transition: width 60ms linear; }
+    .audio-meter-peak { margin-top: var(--space-1); font-size: var(--text-xs); color: var(--color-text-muted); }
+    .audio-preflight-tip, .audio-preflight-status, .audio-preflight-test-result {
+      background: var(--color-surface-alt);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      margin: var(--space-3) 0;
+      font-size: var(--text-sm);
+    }
+    .audio-preflight-test-result[data-state="good"] { border-color: var(--color-good); background: rgba(52, 211, 153, 0.12); color: #1a8a63; }
+    .audio-preflight-test-result[data-state="too-quiet"], .audio-preflight-test-result[data-state="too-loud"] { border-color: var(--color-warn); background: rgba(255, 176, 32, 0.12); color: #a06400; }
+    .audio-preflight-test-result[data-state="no-signal"] { border-color: var(--color-bad); background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+    .audio-preflight-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
+    .audio-preflight-error { min-height: 1.2em; color: var(--color-bad); font-size: var(--text-sm); }
     @media (max-width: 640px) {
-      .audio-preflight-dialog { margin: 0; border-radius: 0; max-width: none; min-height: 100vh; }
+      .audio-preflight-dialog { margin: 0; border-radius: 0; max-width: none; min-height: 100vh; width: 100%; }
       .audio-preflight-row { grid-template-columns: 1fr; }
     }
   `;

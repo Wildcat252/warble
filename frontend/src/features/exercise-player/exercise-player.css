@@ -48,6 +48,17 @@
   text-align: center;
 }
 
+/* Card frame around the graph — the canvas itself keeps its own dark
+ * "instrument display" background (pitch/graph.ts, unchanged), styled here
+ * as a deliberate embedded-screen look rather than a mismatched leftover
+ * dark box against the light page. */
+.exercise-player__graph-card {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
 .exercise-player__readouts {
   display: flex;
   justify-content: space-between;
@@ -66,10 +77,10 @@
 }
 
 .exercise-player__graph {
-  height: 340px;
-  border-radius: var(--radius-lg);
+  height: 320px;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border);
 }
 
 .exercise-summary {

@@ -12,6 +12,7 @@ import type { Screen, ScreenId } from '../screen-types';
 import { homeScreen } from './home/index';
 import { createPlaceholderScreen } from './placeholder';
 import { exercisePlayerScreen } from '../features/exercise-player/index';
+import { exercisePickerScreen } from './exercise-picker/index';
 
 const screens: Record<ScreenId, Screen> = {
   home: homeScreen,
@@ -20,11 +21,7 @@ const screens: Record<ScreenId, Screen> = {
     'Vocal Range Test',
     'Coming in a later build phase — sing your lowest and highest comfortable notes to find your voice type.',
   ),
-  'exercise-picker': createPlaceholderScreen(
-    'exercise-picker',
-    'Exercises',
-    'Coming in a later build phase — a picker for pitch-matching drills, scale climbs, interval jumps, and guided warm-ups.',
-  ),
+  'exercise-picker': exercisePickerScreen,
   'exercise-player': exercisePlayerScreen,
   results: createPlaceholderScreen(
     'results',
