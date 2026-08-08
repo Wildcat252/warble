@@ -5,7 +5,12 @@ export type CentsBand = 'green' | 'amber' | 'red';
 
 export const GREEN_CENTS_THRESHOLD = 50;
 export const AMBER_CENTS_THRESHOLD = 100;
-export const MIN_CONFIDENCE_FOR_DOT = 0.6;
+// Was 0.6 — kept in sync with backend/audio/pitch.py's CONFIDENCE_THRESHOLD
+// (lowered from 0.6 to 0.5 after a live diagnostic session showed real,
+// clearly-voiced frames scoring just under 0.6 and getting dropped). A
+// frontend floor HIGHER than the backend's would silently regate frames
+// the backend already decided were good enough to send.
+export const MIN_CONFIDENCE_FOR_DOT = 0.5;
 export const MIN_CONFIDENCE_FOR_SUMMARY = 0.55;
 
 export function expectedNoteAtBeat(beat: number, notes: NoteModel[]): NoteModel | null {

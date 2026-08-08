@@ -33,8 +33,8 @@ describe('expectedNoteAtBeat', () => {
 });
 
 describe('classifyPitchColor', () => {
-  it('returns grey for low confidence (conf < 0.6)', () => {
-    expect(classifyPitchColor(60, 60, 0.59)).toBe('grey');
+  it('returns grey for low confidence (below MIN_CONFIDENCE_FOR_DOT, currently 0.5)', () => {
+    expect(classifyPitchColor(60, 60, 0.49)).toBe('grey');
   });
 
   // Rest suppression is enforced by PitchOverlay.pushFrame() which checks
