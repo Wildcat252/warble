@@ -21,8 +21,10 @@
 import type { Screen } from '../../screen-types';
 import { navigate, goBack } from '../../navigation/router';
 import { getExerciseById } from '../../exercises/catalog';
-import { DEFAULT_ANCHOR_MIDI, type ExerciseDefinition, type ExerciseTargetNote, type ExerciseTargetResult } from '../../exercises/types';
-import { expectedTargetAtTime, exerciseDurationMs } from '../../exercises/timing';
+import { type ExerciseDefinition, type ExerciseTargetNote, type ExerciseTargetResult } from '../../exercises/types';
+import { resolveAnchorMidi } from '../../exercises/anchor';
+import { expectedTargetAtTime, exerciseDurationMs, withLeadIn } from '../../exercises/timing';
+import { loadToneLeadMs, loadLeadInMs, DEFAULT_TONE_LEAD_MS } from '../../services/user-settings';
 import { scoreContinuousCents, scoreStableHold } from '../../exercises/scoring';
 import { rangeFromTargets } from '../../exercises/range';
 import { PitchGraphCanvas } from '../../pitch/graph';
@@ -31,12 +33,10 @@ import { StableNoteDetector, type StableNoteState } from '../../pitch/stable-not
 import type { PitchFrame } from '../../pitch/socket';
 import { centsOffPitch, GREEN_CENTS_THRESHOLD, MIN_CONFIDENCE_FOR_DOT } from '../../pitch/accuracy';
 import { midiToFrequency, midiToNoteName } from '../../pitch/note-name';
-import { getVoiceTypeById } from '../../pitch/voice-type';
 import { TonePlayer } from '../../audio/tone-player';
 import { recordPracticeEntry } from '../../gamification/practice-log';
 import { computeXp } from '../../gamification/xp';
 import { getAudioContext } from '../../services/audio-context';
-import { loadUserVoiceTypeId } from '../../services/user-settings';
 import { loadBackendDeviceId } from '../../services/audio-device';
 import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';
@@ -57,6 +57,9 @@ let graph: PitchGraphCanvas | null = null;
 let connection: PitchConnection | null = null;
 let stableDetector: StableNoteDetector | null = null;
 let tonePlayer: TonePlayer | null = null;
+/** Index of the next target whose tone has not sounded yet — see cueUpcomingTone. */
+let toneCursor = 0;
+let toneLeadMs = DEFAULT_TONE_LEAD_MS;
 let rafId: number | null = null;
 let startAudioTimeSec = 0;
 let playbackStarted = false;
@@ -77,6 +80,8 @@ function resetState(): void {
   connection = null;
   stableDetector = null;
   tonePlayer = null;
+  toneCursor = 0;
+  toneLeadMs = DEFAULT_TONE_LEAD_MS;
   rafId = null;
   startAudioTimeSec = 0;
   playbackStarted = false;
@@ -102,10 +107,25 @@ function resolveDeviceId(): number | null {
   return loadBackendDeviceId();
 }
 
-function resolveAnchorMidi(): number {
-  const voiceType = getVoiceTypeById(loadUserVoiceTypeId());
-  if (!voiceType) return DEFAULT_ANCHOR_MIDI;
-  return Math.round((voiceType.lowMidi + voiceType.highMidi) / 2);
+/**
+ * Sounds each target's reference tone `toneLeadMs` BEFORE the target begins,
+ * so the singer hears the pitch with time to place it rather than at the
+ * instant they're already meant to be on it.
+ *
+ * Scans forward from `toneCursor` instead of deriving the note from the
+ * current time: with a lead, the note being cued is not the active one, and
+ * at lead values longer than a note two cues can fall due in the same frame.
+ * The cursor also guarantees no target is ever cued twice or skipped, which a
+ * time-window test alone does not.
+ */
+function cueUpcomingTone(elapsedMs: number): void {
+  while (toneCursor < targets.length && targets[toneCursor].startMs - toneLeadMs <= elapsedMs) {
+    const target = targets[toneCursor];
+    // Cue lasts the target's own length, so it is still sounding while the
+    // singer is meant to be holding the note.
+    tonePlayer?.playTargetOnce(toneCursor, target.midi, (target.endMs - target.startMs) / 1000);
+    toneCursor += 1;
+  }
 }
 
 function targetIndexAt(elapsedMs: number): number | null {
@@ -316,9 +336,7 @@ function tick(): void {
     stableDetector?.reset();
     updateTargetReadout();
   }
-  if (activeTargetIndex !== null) {
-    tonePlayer?.playExpectedMidi(targets[activeTargetIndex].midi);
-  }
+  cueUpcomingTone(elapsedMs);
 
   rafId = requestAnimationFrame(tick);
 }
@@ -336,7 +354,12 @@ async function start(): Promise<void> {
   // regardless — this modal was always onboarding UX, never a functional
   // requirement for /playback/start to work.
   const anchorMidi = resolveAnchorMidi();
-  targets = def.generate({ anchorMidi });
+  // Lead-in shifts every target later, giving the singer a beat of silence
+  // before the first note instead of starting on it. Applied here so built-in
+  // and custom exercises behave identically.
+  targets = withLeadIn(def.generate({ anchorMidi }), loadLeadInMs());
+  toneLeadMs = loadToneLeadMs();
+  toneCursor = 0;
   renderProgressDots();
 
   graph = new PitchGraphCanvas(els.graphContainer, { bandCentsTolerance: GREEN_CENTS_THRESHOLD });

@@ -12,6 +12,7 @@ import type { Screen, ScreenId } from '../screen-types';
 import { homeScreen } from './home/index';
 import { exercisePlayerScreen } from '../features/exercise-player/index';
 import { exercisePickerScreen } from './exercise-picker/index';
+import { exerciseEditorScreen } from './exercise-editor/index';
 import { settingsScreen } from './settings/index';
 import { rangeTestScreen } from '../features/range-test/index';
 import { resultsScreen } from './results/index';
@@ -21,6 +22,7 @@ const screens: Record<ScreenId, Screen> = {
   home: homeScreen,
   'range-test': rangeTestScreen,
   'exercise-picker': exercisePickerScreen,
+  'exercise-editor': exerciseEditorScreen,
   'exercise-player': exercisePlayerScreen,
   results: resultsScreen,
   progress: progressScreen,

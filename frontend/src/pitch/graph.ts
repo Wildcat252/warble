@@ -32,6 +32,12 @@ const PUCK_INNER_RADIUS = 6;
 /** Puck hides itself if the most recent sample is older than this — no signal, no false "you're here". */
 const PUCK_STALE_SEC = 0.5;
 
+/* The "now" line through the puck. Solid and reasonably firm — it's the
+   reference the singer reads arrival against — but still darker-on-light
+   rather than an accent colour, so it never competes with the trace. */
+const PLAYHEAD_LINE_COLOR = 'rgba(43, 36, 56, 0.45)';
+const PLAYHEAD_LINE_WIDTH = 2;
+
 export interface GraphTargetPill {
   midi: number;
   startMs: number;
@@ -294,8 +300,11 @@ export class PitchGraphCanvas {
 
     this.drawDotGrid(plotLeft, plotWidth, height);
     this.drawScaleBar(plotLeft, height);
-    // Layer order (bottom -> top): dot grid -> scale bar -> target pills ->
-    // sung trace -> puck, so the puck always reads as "on top."
+    // Layer order (bottom -> top): dot grid -> scale bar -> playhead line ->
+    // target pills -> sung trace -> puck, so the puck always reads as "on
+    // top." The playhead line sits UNDER the pills so an arriving pill
+    // visibly crosses it rather than being cut in half by it.
+    this.drawPlayheadLine(plotLeft, plotWidth, height);
     this.drawTargetPills(nowSec, plotLeft, plotWidth, height);
     this.drawTrace(nowSec, plotLeft, plotWidth, height);
     this.drawPuck(nowSec, plotLeft, plotWidth, height);
@@ -336,6 +345,31 @@ export class PitchGraphCanvas {
       const y = midiToGraphY(midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
       this.ctx.fillText(label, 4 + (barWidth / 2), y + 3);
     }
+  }
+
+  /**
+   * The "now" line — a fixed vertical line through the puck, spanning the full
+   * plot height.
+   *
+   * This is the arrival marker: target pills scroll toward it from the right,
+   * and a note is due the instant its pill's left edge touches the line. That
+   * makes the approach readable as a countdown ("the pill is two thirds of the
+   * way there") instead of something the singer only notices once it has
+   * already happened.
+   *
+   * It sits at the same X as the puck (DEFAULT_PLAYHEAD_RATIO) by
+   * construction, so the puck always rides along it.
+   */
+  private drawPlayheadLine(plotLeft: number, plotWidth: number, height: number): void {
+    const x = plotLeft + (plotWidth * DEFAULT_PLAYHEAD_RATIO);
+    this.ctx.save();
+    this.ctx.strokeStyle = PLAYHEAD_LINE_COLOR;
+    this.ctx.lineWidth = PLAYHEAD_LINE_WIDTH;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, 0);
+    this.ctx.lineTo(x, height);
+    this.ctx.stroke();
+    this.ctx.restore();
   }
 
   /**

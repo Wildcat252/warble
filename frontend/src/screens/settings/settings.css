@@ -110,3 +110,17 @@
 .settings-danger:hover {
   background: rgba(239, 68, 68, 0.08);
 }
+
+/* Slider rows carry a value readout after the control, so the field is a
+   three-part grid rather than the label/control pair the other rows use. */
+.settings-field--slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.settings-field--slider output {
+  min-width: 3.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+}

@@ -90,10 +90,6 @@ function render(container: HTMLElement): void {
       </div>
 
       <div class="home-grid">
-        <button type="button" class="home-tile card" data-nav="range-test">
-          <span class="home-tile__label">Vocal Range Test</span>
-          <span class="home-tile__hint">Find your voice type</span>
-        </button>
         <button type="button" class="home-tile card" data-nav="exercise-picker">
           <span class="home-tile__label">Exercises</span>
           <span class="home-tile__hint">Pitch-matching drills</span>

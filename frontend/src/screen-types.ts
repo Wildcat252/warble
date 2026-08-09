@@ -11,6 +11,7 @@ export type ScreenId =
   | 'home'
   | 'range-test'
   | 'exercise-picker'
+  | 'exercise-editor'
   | 'exercise-player'
   | 'results'
   | 'progress'

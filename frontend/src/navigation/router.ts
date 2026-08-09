@@ -41,11 +41,17 @@ export function replace(screen: ScreenId, params: Record<string, string> = {}): 
   emit();
 }
 
-export function goBack(): void {
+/**
+ * Returns false when the back-stack was empty and nothing moved, so callers
+ * that must end up *somewhere* (rather than silently no-op'ing on screen) can
+ * fall back to an explicit destination — see range-test's returnToOrigin.
+ */
+export function goBack(): boolean {
   const previous = backStack.pop();
-  if (!previous) return;
+  if (!previous) return false;
   current = previous;
   emit();
+  return true;
 }
 
 export function getCurrentScreen(): RouterState {

@@ -2,6 +2,13 @@
  * Settings screen — microphone, voice type, daily goal, and pitch-engine
  * diagnostics.
  *
+ * The vocal range test launches from the Voice section here, and this is now
+ * its ONLY entry point (it previously also had a nav-rail item and a Home
+ * tile). The test exists to determine one setting — your voice type — so it
+ * reads as a top-level destination it never earned; consolidating it next to
+ * the dropdown it writes to also makes the retake path obvious, which being
+ * stranded in the nav rail did not.
+ *
  * The microphone picker here is populated from the BACKEND's /audio/devices
  * list, because the backend captures audio itself (Python/sounddevice) and
  * /playback/start expects a PortAudio integer index. The separate "mic
@@ -10,8 +17,19 @@
  * are kept apart.
  */
 import type { Screen } from '../../screen-types';
+import { navigate } from '../../navigation/router';
 import { openAudioPreflightModal } from '../../services/audio-preflight';
-import { loadUserVoiceTypeId, persistUserVoiceTypeId } from '../../services/user-settings';
+import {
+  loadUserVoiceTypeId, persistUserVoiceTypeId,
+  loadInstrumentId, persistInstrumentId,
+  loadToneLeadMs, persistToneLeadMs, MIN_TONE_LEAD_MS, MAX_TONE_LEAD_MS,
+  loadLeadInMs, persistLeadInMs, MIN_LEAD_IN_MS, MAX_LEAD_IN_MS,
+} from '../../services/user-settings';
+import {
+  INSTRUMENTS, INSTRUMENT_FAMILIES, getInstrument, playInstrumentNote, type InstrumentId,
+} from '../../audio/instruments';
+import { getAudioContext } from '../../services/audio-context';
+import { resolveAnchorMidi } from '../../exercises/anchor';
 import { VOICE_TYPES, getVoiceTypeById } from '../../pitch/voice-type';
 import {
   fetchAudioDevices, fetchPitchEngine, loadBackendDeviceId,
@@ -56,6 +74,34 @@ function voiceTypeOptions(): string {
   ].join('');
 }
 
+/** Grouped by instrument family — a flat list of seven voices is hard to scan. */
+function instrumentOptions(): string {
+  const current = loadInstrumentId();
+  return INSTRUMENT_FAMILIES.map((family) => {
+    const opts = INSTRUMENTS
+      .filter((i) => i.family === family)
+      .map((i) => `<option value="${i.id}" ${current === i.id ? 'selected' : ''}>${i.label}</option>`)
+      .join('');
+    return `<optgroup label="${family}">${opts}</optgroup>`;
+  }).join('');
+}
+
+/** Length used when auditioning a voice in Settings — a typical exercise note. */
+const AUDITION_SECONDS = 2;
+
+function auditionInstrument(instrument: InstrumentId): void {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') void ctx.resume();
+  playInstrumentNote(ctx, instrument, resolveAnchorMidi(), ctx.currentTime + 0.02, AUDITION_SECONDS);
+}
+
+function formatMs(ms: number): string {
+  if (ms === 0) return 'Off';
+  if (ms < 1000) return `${ms} ms`;
+  // Trim a trailing .0 so 2000ms reads "2s", not "2.0s".
+  return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
+}
+
 function goalOptions(): string {
   const current = loadDailyGoal();
   return DAILY_GOAL_OPTIONS
@@ -83,6 +129,9 @@ function engineSummary(): string {
 
 function render(container: HTMLElement): void {
   const voiceType = getVoiceTypeById(loadUserVoiceTypeId());
+  const instrument = loadInstrumentId();
+  const toneLeadMs = loadToneLeadMs();
+  const leadInMs = loadLeadInMs();
 
   container.innerHTML = `
     <div class="settings-screen fade-in">
@@ -102,11 +151,51 @@ function render(container: HTMLElement): void {
 
       <section class="card settings-section">
         <h2>Voice</h2>
-        <p class="settings-hint">Sets the starting pitch exercises are built around.${voiceType ? '' : ' Take the range test to find yours.'}</p>
+        <p class="settings-hint">Sets the starting pitch exercises are built around.</p>
         <label class="settings-field">
           <span>Voice type</span>
           <select id="settings-voice-type">${voiceTypeOptions()}</select>
         </label>
+        <p class="settings-hint">${voiceType
+    ? `Currently ${voiceType.label} (${midiToNoteName(voiceType.lowMidi)}–${midiToNoteName(voiceType.highMidi)}). Retake the range test if your voice has changed.`
+    : "Not sure which you are? The range test measures your lowest and highest notes and sets this for you."
+}</p>
+        <button type="button" class="btn btn-secondary" id="settings-open-range-test">
+          ${voiceType ? 'Retake range test' : 'Take the range test'}
+        </button>
+      </section>
+
+      <section class="card settings-section">
+        <h2>Practice sound</h2>
+        <p class="settings-hint">The reference note you hear at the start of each note in an exercise.</p>
+        <label class="settings-field">
+          <span>Instrument</span>
+          <select id="settings-instrument">${instrumentOptions()}</select>
+        </label>
+        <p class="settings-hint">
+          ${getInstrument(instrument)?.description ?? ''}
+          ${getInstrument(instrument)?.sustains === false
+    ? ' It fades away on its own rather than lasting the whole note — that is how a struck string behaves.'
+    : ''
+}
+        </p>
+        <button type="button" class="btn btn-secondary" id="settings-hear-instrument">Hear it</button>
+
+        <label class="settings-field settings-field--slider">
+          <span>Play note early</span>
+          <input type="range" id="settings-tone-lead"
+                 min="${MIN_TONE_LEAD_MS}" max="${MAX_TONE_LEAD_MS}" step="50" value="${toneLeadMs}" />
+          <output for="settings-tone-lead" id="settings-tone-lead-out">${formatMs(toneLeadMs)}</output>
+        </label>
+        <p class="settings-hint">How far ahead of each note you hear its reference tone, so you have time to pitch it.</p>
+
+        <label class="settings-field settings-field--slider">
+          <span>Count-in before first note</span>
+          <input type="range" id="settings-lead-in"
+                 min="${MIN_LEAD_IN_MS}" max="${MAX_LEAD_IN_MS}" step="250" value="${leadInMs}" />
+          <output for="settings-lead-in" id="settings-lead-in-out">${formatMs(leadInMs)}</output>
+        </label>
+        <p class="settings-hint">Silence at the start of every exercise before the first note is due.</p>
       </section>
 
       <section class="card settings-section">
@@ -140,6 +229,42 @@ function render(container: HTMLElement): void {
     const value = (ev.target as HTMLSelectElement).value;
     persistUserVoiceTypeId(value === '' ? null : value);
     render(container); // refresh the hint text
+  });
+
+  container.querySelector<HTMLButtonElement>('#settings-open-range-test')?.addEventListener('click', () => {
+    navigate('range-test');
+  });
+
+  container.querySelector<HTMLSelectElement>('#settings-instrument')?.addEventListener('change', (ev) => {
+    const value = (ev.target as HTMLSelectElement).value as InstrumentId;
+    persistInstrumentId(value);
+    // Audition it immediately — picking a practice sound blind, then only
+    // hearing it once an exercise is underway, makes the setting untestable.
+    auditionInstrument(value);
+    render(container); // refresh the description line
+  });
+
+  container.querySelector<HTMLButtonElement>('#settings-hear-instrument')?.addEventListener('click', () => {
+    auditionInstrument(loadInstrumentId());
+  });
+
+  // 'input' (not 'change') so the readout tracks the thumb while dragging.
+  // Neither slider re-renders: a re-render mid-drag would rebuild the input
+  // and drop the pointer capture, stalling the drag.
+  const toneLead = container.querySelector<HTMLInputElement>('#settings-tone-lead');
+  toneLead?.addEventListener('input', () => {
+    const value = Number.parseInt(toneLead.value, 10);
+    persistToneLeadMs(value);
+    const out = container.querySelector<HTMLElement>('#settings-tone-lead-out');
+    if (out) out.textContent = formatMs(value);
+  });
+
+  const leadIn = container.querySelector<HTMLInputElement>('#settings-lead-in');
+  leadIn?.addEventListener('input', () => {
+    const value = Number.parseInt(leadIn.value, 10);
+    persistLeadInMs(value);
+    const out = container.querySelector<HTMLElement>('#settings-lead-in-out');
+    if (out) out.textContent = formatMs(value);
   });
 
   container.querySelector<HTMLSelectElement>('#settings-daily-goal')?.addEventListener('change', (ev) => {

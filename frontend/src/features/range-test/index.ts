@@ -75,6 +75,20 @@ function clearPhaseTimer(): void {
   }
 }
 
+/**
+ * Finishing returns the singer to whichever screen launched the test, rather
+ * than dumping them on Home. In practice that's Settings → Voice (the only
+ * entry point), where the voice type they just saved is now visible in the
+ * dropdown — landing on Home instead hid the result of the thing they'd just
+ * done. goBack() is used rather than a hardcoded navigate('settings') so a
+ * future second entry point doesn't silently misroute; Home is the fallback
+ * for the case where the back-stack is somehow empty (e.g. a deep link
+ * straight into the test).
+ */
+function returnToOrigin(): void {
+  if (!goBack()) navigate('home');
+}
+
 function render(): void {
   if (!container) return;
   if (stage === 'intro') return renderIntro(container);
@@ -154,10 +168,10 @@ function renderReveal(root: HTMLElement): void {
 
   root.querySelector<HTMLButtonElement>('#range-test-save')?.addEventListener('click', () => {
     if (voiceType) persistUserVoiceTypeId(voiceType.id);
-    navigate('home');
+    returnToOrigin();
   });
   root.querySelector<HTMLButtonElement>('#range-test-done')?.addEventListener('click', () => {
-    navigate('home');
+    returnToOrigin();
   });
 }
 

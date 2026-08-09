@@ -17,10 +17,13 @@ interface NavItem {
   label: string;
 }
 
+/**
+ * 'range-test' is deliberately absent: it sets one thing (voice type) and is
+ * now reached only from Settings → Voice, next to the dropdown it writes to.
+ */
 const NAV_ITEMS: NavItem[] = [
   { screen: 'home', label: 'Home' },
   { screen: 'exercise-picker', label: 'Exercises' },
-  { screen: 'range-test', label: 'Range Test' },
   { screen: 'progress', label: 'Progress' },
   { screen: 'settings', label: 'Settings' },
 ];

@@ -6,6 +6,8 @@
  */
 import type { ExerciseDefinition, ExerciseGenerationContext, ExerciseTargetNote } from './types';
 import { buildWarmupSequence, type WarmupSegment } from '../warmup/session';
+import { isCustomExerciseId } from './custom-types';
+import { getCustomExerciseById } from './custom-catalog';
 
 /** 1:1 adapter — guided-warmup reuses warmup/session.ts's generator verbatim, zero new scheduling logic. */
 function warmupSegmentsToTargets(segments: WarmupSegment[]): ExerciseTargetNote[] {
@@ -103,6 +105,18 @@ export const EXERCISE_CATALOG: ExerciseDefinition[] = [
   guidedWarmup,
 ];
 
+/**
+ * Resolves any exercise id — built-in or user-created.
+ *
+ * Custom exercises are checked second and only for ids carrying the
+ * `custom:` prefix, so a built-in can never be shadowed by stored data and
+ * the common path stays a plain array scan with no localStorage read.
+ * Everything that renders an exercise (player, results, progress) goes
+ * through here, which is why custom exercises needed no changes in any of
+ * those screens.
+ */
 export function getExerciseById(id: string): ExerciseDefinition | undefined {
-  return EXERCISE_CATALOG.find((ex) => ex.id === id);
+  const builtIn = EXERCISE_CATALOG.find((ex) => ex.id === id);
+  if (builtIn) return builtIn;
+  return isCustomExerciseId(id) ? getCustomExerciseById(id) : undefined;
 }

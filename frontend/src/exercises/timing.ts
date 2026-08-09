@@ -43,3 +43,18 @@ export function exerciseDurationMs(targets: ExerciseTargetNote[]): number {
   if (targets.length === 0) return 0;
   return targets[targets.length - 1].endMs;
 }
+
+/**
+ * Shifts every target later by `offsetMs`, creating a lead-in gap before the
+ * first note.
+ *
+ * Applied once at exercise start rather than baked into each generate(), so
+ * built-in and user-created exercises get the same lead-in from one place and
+ * generate() stays a pure function of the anchor. Scoring, the graph and
+ * exerciseDurationMs all read startMs/endMs, so shifting them is sufficient —
+ * nothing else needs to know the gap exists.
+ */
+export function withLeadIn(targets: ExerciseTargetNote[], offsetMs: number): ExerciseTargetNote[] {
+  if (offsetMs <= 0) return targets;
+  return targets.map((t) => ({ ...t, startMs: t.startMs + offsetMs, endMs: t.endMs + offsetMs }));
+}

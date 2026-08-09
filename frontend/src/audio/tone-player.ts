@@ -1,42 +1,57 @@
 /**
- * Reference-tone player — a short Web Audio triangle-wave blip for a given
- * MIDI pitch. Promoted out of warmup/session.ts (where it was
- * WarmupTonePlayer, warm-up-only) so every exercise kind can play a
- * reference tone, not just guided warm-ups.
+ * Reference-tone player — sounds one cue note at the start of each exercise
+ * target. Promoted out of warmup/session.ts (where it was WarmupTonePlayer,
+ * warm-up-only) so every exercise kind can play a reference tone.
+ *
+ * ONE SOUND PER NOTE. The player calls this from its animation-frame loop, so
+ * it fires many times per target; the previous guard suppressed repeats of the
+ * same PITCH within 450ms, which meant a 2s target re-triggered about four
+ * times and a 6s note-hold target about thirteen. Keying on the target's
+ * identity instead makes the cue fire exactly once per target — including for
+ * two consecutive targets on the same pitch, which a pitch-based guard
+ * collapsed into one.
  */
-import { midiToFrequency } from '../pitch/note-name';
 import { getAudioContext } from '../services/audio-context';
-
-/** Suppresses re-triggering the same pitch within this window (avoids stutter on rapid re-renders). */
-const REPEAT_SUPPRESSION_MS = 450;
+import { loadInstrumentId } from '../services/user-settings';
+import { playInstrumentNote, type InstrumentId } from './instruments';
 
 export class TonePlayer {
-  private lastMidi: number | null = null;
-  private lastPlayedAt = 0;
+  /** Identity of the target already sounded; null before the first note. */
+  private lastKey: string | null = null;
+  /**
+   * Instrument is read once per exercise, not per note — changing it mid-run
+   * would make an exercise change timbre halfway through.
+   */
+  private readonly instrument: InstrumentId;
 
-  playExpectedMidi(midi: number | null): void {
-    if (midi === null) return;
-    const now = performance.now();
-    if (this.lastMidi === midi && (now - this.lastPlayedAt) < REPEAT_SUPPRESSION_MS) return;
+  constructor(instrument: InstrumentId = loadInstrumentId()) {
+    this.instrument = instrument;
+  }
+
+  /**
+   * Sounds the cue for a target, if it hasn't already been sounded.
+   *
+   * `targetKey` must uniquely identify the target within the exercise — the
+   * caller passes the target's index. Pitch alone is not enough (see the class
+   * comment). `durationSec` is the target's own length, so the cue fills the
+   * note instead of blipping at its start.
+   */
+  playTargetOnce(targetKey: string | number | null, midi: number | null, durationSec: number): void {
+    if (targetKey === null || midi === null) return;
+    const key = String(targetKey);
+    if (this.lastKey === key) return;
+    this.lastKey = key;
 
     const ctx = getAudioContext();
     if (ctx.state === 'suspended') {
       void ctx.resume();
     }
-    const t0 = ctx.currentTime + 0.01;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = midiToFrequency(midi);
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.06, t0 + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + 0.3);
+    // Small lead so the envelope's first ramp isn't scheduled in the past.
+    playInstrumentNote(ctx, this.instrument, midi, ctx.currentTime + 0.01, durationSec);
+  }
 
-    this.lastMidi = midi;
-    this.lastPlayedAt = now;
+  /** Forgets what was last sounded, so a replay of the same exercise cues again. */
+  reset(): void {
+    this.lastKey = null;
   }
 }
