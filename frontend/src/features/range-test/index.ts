@@ -9,20 +9,23 @@
  * exercise start, does NOT gate itself on audio-preflight either — it just
  * starts capturing.
  *
- * Each phase asks for a brief GLIDE, not a single static held note.
- * classifyVoiceType() (pitch/voice-type.ts) requires 10 distinct stable
- * notes before it'll suggest a voice type — a deliberate quality gate that
- * fits its original use (range tracked incidentally over a whole practice
- * session) poorly for a dedicated 2-endpoint test. A short slide up/down
- * naturally passes through several notes, making that threshold realistic
- * to reach in a few seconds; if it still isn't reached, the reveal screen
- * falls back to showing the measured low/high without a voice-type guess
- * rather than failing outright.
+ * Each phase asks for a brief GLIDE, not a single static held note, because
+ * sliding into the extreme finds a true limit more reliably than trying to
+ * pitch it cold.
+ *
+ * That makes SessionRangeTracker's stable-note count useless as a quality
+ * signal here — gliding never settles within 40 cents of a semitone for the
+ * 250ms a "stable note" requires. So classification uses
+ * voiceTypeForRange() (range + span sanity) rather than
+ * classifyVoiceType() (which additionally demands 10 stable notes, the
+ * right gate only for range picked up passively during practice). If the
+ * span is implausible the reveal still shows the measured low/high without
+ * a guess, rather than failing outright.
  */
 import type { Screen } from '../../screen-types';
 import { navigate, goBack } from '../../navigation/router';
 import { SessionRangeTracker } from '../../pitch/session-range';
-import { classifyVoiceType } from '../../pitch/voice-type';
+import { voiceTypeForRange } from '../../pitch/voice-type';
 import { persistUserVoiceTypeId } from '../../services/audio-preflight';
 import { recordPracticeEntry } from '../../gamification/practice-log';
 import { loadBackendDeviceId } from '../../services/audio-device';
@@ -119,9 +122,12 @@ function renderCapture(root: HTMLElement): void {
 
 function renderReveal(root: HTMLElement): void {
   const summary = tracker?.summary() ?? null;
-  const voiceType = summary
-    ? classifyVoiceType({ lowestMidi: summary.lowMidi, highestMidi: summary.highMidi, stableNoteCount: summary.stableNoteCount })
-    : null;
+  // voiceTypeForRange, NOT classifyVoiceType: the latter also demands 10
+  // distinct stable notes, which is the right gate for range picked up
+  // passively during practice but impossible to satisfy here — this screen
+  // asks the singer to GLIDE to each extreme, and gliding never settles on
+  // discrete pitches. Using it rejected valid measurements outright.
+  const voiceType = summary ? voiceTypeForRange(summary.lowMidi, summary.highMidi) : null;
 
   const rangeText = summary ? `${midiToNoteName(summary.lowMidi)} – ${midiToNoteName(summary.highMidi)}` : 'Not enough signal captured';
 
@@ -134,7 +140,7 @@ function renderReveal(root: HTMLElement): void {
 }
         <p class="range-test__range-readout">${rangeText}</p>
         ${!voiceType && summary
-    ? '<p class="range-test__hint">Not quite enough distinct notes for a voice-type suggestion this time — try gliding a little slower next time.</p>'
+    ? '<p class="range-test__hint">That range looks too narrow or too wide to match a voice type confidently — try again, going as low and as high as is comfortable without straining.</p>'
     : ''
 }
         ${!summary ? '<p class="range-test__hint">We couldn\'t detect enough of your voice — check your mic in Settings and try again.</p>' : ''}
