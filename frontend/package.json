@@ -20,9 +20,6 @@
     "vite": "^5.2.0",
     "vitest": "^1.6.0"
   },
-  "dependencies": {
-    "opensheetmusicdisplay": "^1.8.0"
-  },
   "license": "Apache-2.0",
   "main": "electron/main.js",
   "description": "Desktop frontend and packaging config for sing-attune",

@@ -17,17 +17,17 @@ Warble is a desktop vocal-training app: pitch-matching drills, guided warm-ups, 
 | Phase | What it covers | Status |
 |---|---|---|
 | 1. Design system + app shell | New light/warm visual identity, nav rail, screen router | ✅ Done |
-| 2. Exercise engine core | Exercise data model, scoring, reference-tone player | 🔲 Planned |
-| 3. Exercise Player (first exercise) | Live pitch-matching gameplay screen | 🔲 Planned |
-| 4. Remaining exercises + picker | Scale climbs, interval jumps, guided warm-up, picker screen | 🔲 Planned |
-| 5. Vocal Range Test | Guided low/high note capture → voice type | 🔲 Planned |
-| 6. Gamification | XP, streaks, daily goals, results screen | 🔲 Planned |
-| 7. Progress screen | Streak calendar, XP trend, range history | 🔲 Planned |
-| 8. Settings screen | Mic device, voice type, pitch-detection tuning | 🔲 Planned |
-| 9. Cleanup | Remove unused score/OSMD code and dependency | 🔲 Planned |
+| 2. Exercise engine core | Exercise data model, scoring, reference-tone player | ✅ Done |
+| 3. Exercise Player (first exercise) | Live pitch-matching gameplay screen | ✅ Done |
+| 4. Remaining exercises + picker | Scale climbs, interval jumps, guided warm-up, picker screen | ✅ Done |
+| 5. Vocal Range Test | Guided low/high note capture → voice type | ✅ Done |
+| 6. Gamification | XP, streaks, daily goals, results screen | ✅ Done |
+| 7. Progress screen | Streak calendar, XP trend, range history | ✅ Done |
+| 8. Settings screen | Mic device, voice type, pitch-detection tuning | ✅ Done |
+| 9. Cleanup | Remove unused score/OSMD code and dependency | ✅ Done |
 | 10. Branding + packaging | Electron installer branding, icon | 🔲 Planned |
 
-The backend's MusicXML/score-following endpoints (`/score`, `/transcribe/audio`) still exist in the codebase from the upstream project and are left untouched — they're just no longer wired into the UI, since real-time pitch streaming was already independent of score-following.
+The frontend no longer contains any score/MusicXML code, and has **no runtime npm dependencies**. The backend's score endpoints (`/score`, `/transcribe/audio`) still exist and are left untouched — they're simply not called, since real-time pitch streaming was already independent of score-following.
 
 ---
 
@@ -131,21 +131,22 @@ cd frontend && npx playwright install chromium && npm run test:e2e
 
 ```
 backend/
-  audio/          Mic capture, pitch detection pipeline (score-independent, reused as-is)
-  score/          MusicXML parsing (from upstream sing-attune, currently unused by the UI)
-  tests/          pytest suite (hardware tests auto-skip in CI)
+  audio/          Mic capture + pitch detection pipeline (score-independent)
+  score/, music/  MusicXML parsing & transcription from upstream — still
+                  present and tested, but no longer called by the frontend
   main.py         FastAPI app, REST endpoints, WebSocket pitch stream
 frontend/
   src/
-    branding.ts       App name / storage-prefix constant
+    branding.ts        App name / storage-prefix constant
     styles/            Design tokens + shared component CSS
-    screens/            Navigable screens (Home, Exercises, Range Test, Progress, Settings, ...)
-    features/app-shell/  Persistent nav chrome, mounts the active screen
-    exercises/          (Phase 2+) Exercise data model, scoring, catalog
-    gamification/        (Phase 6+) XP, streaks, practice log
-    pitch/, warmup/       Reused real-time pitch math + warm-up sequencing from upstream
+    screens/           Home, Exercises, Results, Progress, Settings
+    features/          app-shell (nav + routing), exercise-player,
+                       range-test, audio-preflight
+    exercises/         Exercise model, scheduling, scoring, catalog
+    gamification/      XP, streaks, practice log, confetti
+    pitch/             Pitch graph, accuracy maths, WS client, voice type
 electron/
-  main.js         Electron shell: backend process lifecycle + dynamic port + splash
+  main.js         Electron shell: backend process lifecycle + dynamic port
 ```
 
 ---
