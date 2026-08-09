@@ -26,7 +26,7 @@ import type { Screen } from '../../screen-types';
 import { navigate, goBack } from '../../navigation/router';
 import { SessionRangeTracker } from '../../pitch/session-range';
 import { voiceTypeForRange } from '../../pitch/voice-type';
-import { persistUserVoiceTypeId } from '../../services/audio-preflight';
+import { persistUserVoiceTypeId } from '../../services/user-settings';
 import { recordPracticeEntry } from '../../gamification/practice-log';
 import { loadBackendDeviceId } from '../../services/audio-device';
 import { PitchConnection } from '../../pitch/pitch-connection';

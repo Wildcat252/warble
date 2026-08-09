@@ -36,7 +36,7 @@ import { TonePlayer } from '../../audio/tone-player';
 import { recordPracticeEntry } from '../../gamification/practice-log';
 import { computeXp } from '../../gamification/xp';
 import { getAudioContext } from '../../services/audio-context';
-import { loadUserVoiceTypeId } from '../../services/audio-preflight';
+import { loadUserVoiceTypeId } from '../../services/user-settings';
 import { loadBackendDeviceId } from '../../services/audio-device';
 import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';

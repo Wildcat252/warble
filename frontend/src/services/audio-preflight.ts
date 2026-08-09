@@ -1,109 +1,21 @@
-const PRE_FLIGHT_DEVICE_KEY = 'sing-attune.preflight.deviceId';
-const PRE_FLIGHT_LATENCY_KEY = 'sing-attune.preflight.latencyMs';
-const USER_VOICE_TYPE_KEY = 'userVoiceType';
-const USER_OCTAVE_COMP_KEY = 'sing-attune.preflight.octaveCompensation';
+/**
+ * Opener registration for the mic-test modal.
+ *
+ * The modal used to be a gate shown before every exercise, and owned mic
+ * device / latency / octave-compensation / voice-type settings. Those were
+ * either duplicated by the Settings screen or written but never read, so the
+ * modal is now purely an on-demand microphone level test opened from
+ * Settings. Voice type moved to services/user-settings.ts.
+ */
 
-const DEFAULT_LATENCY_MS = 0;
-
-let openPreflightModal: (() => Promise<boolean>) | null = null;
-let preflightCompleted = false;
-
-function getStorage(): Storage | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
+let openModal: (() => Promise<boolean>) | null = null;
 
 export function registerAudioPreflightOpener(opener: () => Promise<boolean>): void {
-  openPreflightModal = opener;
+  openModal = opener;
 }
 
-export function markAudioPreflightComplete(): void {
-  preflightCompleted = true;
-}
-
-export async function ensureAudioPreflightReady(): Promise<boolean> {
-  if (preflightCompleted) return true;
-  if (!openPreflightModal) return false;
-  const completed = await openPreflightModal();
-  if (completed) preflightCompleted = true;
-  return completed;
-}
-
-/**
- * Always opens the mic/audio setup modal, regardless of whether it was
- * already completed this session — for the Settings screen's "Open mic
- * setup" button, where the user is deliberately revisiting it to change
- * device/voice type/latency, not being gated on first use.
- * ensureAudioPreflightReady() is for that gating case and short-circuits
- * once already completed, which is exactly wrong for "let me adjust this."
- */
+/** Resolves true if the test was completed, false if dismissed. */
 export function openAudioPreflightModal(): Promise<boolean> {
-  if (!openPreflightModal) return Promise.resolve(false);
-  return openPreflightModal();
-}
-
-export function loadPreflightDeviceId(): string | null {
-  const storage = getStorage();
-  if (!storage) return null;
-  const value = storage.getItem(PRE_FLIGHT_DEVICE_KEY);
-  return value && value.trim() !== '' ? value : null;
-}
-
-export function persistPreflightDeviceId(deviceId: string | null): void {
-  const storage = getStorage();
-  if (!storage) return;
-  if (!deviceId) {
-    storage.removeItem(PRE_FLIGHT_DEVICE_KEY);
-    return;
-  }
-  storage.setItem(PRE_FLIGHT_DEVICE_KEY, deviceId);
-}
-
-export function loadPreflightLatencyMs(): number {
-  const storage = getStorage();
-  if (!storage) return DEFAULT_LATENCY_MS;
-  const raw = storage.getItem(PRE_FLIGHT_LATENCY_KEY);
-  const parsed = raw === null ? Number.NaN : Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return DEFAULT_LATENCY_MS;
-  return Math.min(500, Math.max(-250, parsed));
-}
-
-export function persistPreflightLatencyMs(value: number): void {
-  const storage = getStorage();
-  if (!storage) return;
-  const clamped = Math.round(Math.min(500, Math.max(-250, value)));
-  storage.setItem(PRE_FLIGHT_LATENCY_KEY, String(clamped));
-}
-
-export function loadUserVoiceTypeId(): string | null {
-  const storage = getStorage();
-  if (!storage) return null;
-  const value = storage.getItem(USER_VOICE_TYPE_KEY);
-  return value && value.trim() !== '' ? value : null;
-}
-
-export function persistUserVoiceTypeId(voiceTypeId: string | null): void {
-  const storage = getStorage();
-  if (!storage) return;
-  if (!voiceTypeId) {
-    storage.removeItem(USER_VOICE_TYPE_KEY);
-    return;
-  }
-  storage.setItem(USER_VOICE_TYPE_KEY, voiceTypeId);
-}
-
-export function loadOctaveCompensationEnabled(): boolean {
-  const storage = getStorage();
-  if (!storage) return false;
-  return storage.getItem(USER_OCTAVE_COMP_KEY) === '1';
-}
-
-export function persistOctaveCompensationEnabled(enabled: boolean): void {
-  const storage = getStorage();
-  if (!storage) return;
-  storage.setItem(USER_OCTAVE_COMP_KEY, enabled ? '1' : '0');
+  if (!openModal) return Promise.resolve(false);
+  return openModal();
 }

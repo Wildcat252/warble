@@ -10,7 +10,8 @@
  * are kept apart.
  */
 import type { Screen } from '../../screen-types';
-import { openAudioPreflightModal, loadUserVoiceTypeId, persistUserVoiceTypeId } from '../../services/audio-preflight';
+import { openAudioPreflightModal } from '../../services/audio-preflight';
+import { loadUserVoiceTypeId, persistUserVoiceTypeId } from '../../services/user-settings';
 import { VOICE_TYPES, getVoiceTypeById } from '../../pitch/voice-type';
 import {
   fetchAudioDevices, fetchPitchEngine, loadBackendDeviceId,
