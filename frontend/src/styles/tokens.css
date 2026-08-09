@@ -1,0 +1,71 @@
+/**
+ * Design tokens — single source of truth for color/type/space/radius/shadow.
+ *
+ * Warm, bright, light theme (deliberate departure from the old dark
+ * choir-practice-tool look — see "Design system" in the Warble rework plan).
+ * No dark-mode toggle in v1.
+ */
+:root {
+  /* Brand — warm coral-to-pink gradient, the app's primary identity color */
+  --color-primary: #ff6b6b;
+  --color-primary-dark: #e85555;
+  --color-secondary: #ffa94d;
+  --gradient-primary: linear-gradient(135deg, #ff8a65 0%, #ff6b6b 50%, #ff5ca0 100%);
+
+  /* Accent — used for XP/level UI, kept distinct from primary so XP always reads as "special" */
+  --color-accent: #8b5cf6;
+  --color-xp: #ffd43b;
+  --color-flame: #ff9f43;
+
+  /* Pitch-accuracy feedback colors — semantics kept stable across the rework */
+  --color-good: #34d399;
+  --color-warn: #ffb020;
+  --color-bad: #ef4444;
+
+  /* Neutrals — warm off-white, not stark white/black */
+  --color-bg: #fff8f3;
+  --color-surface: #ffffff;
+  --color-surface-alt: #fff1e6;
+  --color-border: #f0dfd3;
+  --color-text: #2b2438;
+  --color-text-muted: #8a7f91;
+
+  /* Type scale (rem, base 16px) */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --text-3xl: 3rem;
+  --font-regular: 400;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-black: 800;
+
+  /* Spacing (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radius — big friendly rounding */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 999px;
+
+  /* Shadows — soft, colorful, never harsh black */
+  --shadow-sm: 0 2px 6px rgba(43, 36, 56, 0.06);
+  --shadow-md: 0 8px 20px rgba(43, 36, 56, 0.1);
+  --shadow-lg: 0 16px 40px rgba(43, 36, 56, 0.14);
+  --shadow-glow-primary: 0 8px 24px rgba(255, 107, 107, 0.35);
+}

@@ -1,5 +1,6 @@
 import type { PitchFrame } from './socket';
-import { classifyGraphTraceColor, type GraphTraceColor } from './graph-colors';
+import { classifyGraphTraceColor, colorForMidi, type GraphTraceColor } from './graph-colors';
+import { midiToNoteName } from './note-name';
 
 export const GRAPH_MIDI_MIN = 36; // C2
 export const GRAPH_MIDI_MAX = 84; // C6
@@ -8,6 +9,35 @@ const RECENTER_THRESHOLD_RATIO = 0.3;
 
 /** Default tolerance for the target-note band (±50 cents = ±0.5 semitone). */
 export const DEFAULT_BAND_CENTS_TOLERANCE = 50;
+
+/**
+ * Where "now" sits across the plot width, as a fraction from the left —
+ * the "note highway" layout: sung history trails to the left of the
+ * playhead, upcoming targets (see setTargets()) approach from the right.
+ * A plain rolling graph (playheadRatio effectively 1, "now" at the right
+ * edge) is what this used to be; timeToGraphX()'s playheadRatio param
+ * defaults to 1 for that reason — old callers/tests are unaffected.
+ */
+const DEFAULT_PLAYHEAD_RATIO = 0.24;
+
+const SCALE_BAR_WIDTH = 40;
+const SCALE_LABEL_STEP_SEMITONES = 4;
+const DOT_GRID_SPACING_X = 34;
+const DOT_GRID_SPACING_Y = 26;
+const DOT_GRID_RADIUS = 1.6;
+const TRACE_LINE_WIDTH = 7;
+const PILL_HEIGHT = 26;
+const PUCK_OUTER_RADIUS = 11;
+const PUCK_INNER_RADIUS = 6;
+/** Puck hides itself if the most recent sample is older than this — no signal, no false "you're here". */
+const PUCK_STALE_SEC = 0.5;
+
+export interface GraphTargetPill {
+  midi: number;
+  startMs: number;
+  endMs: number;
+  label?: string;
+}
 
 interface GraphSample {
   tSec: number;
@@ -35,14 +65,6 @@ interface GridLine {
 }
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const KEYBOARD_GUTTER_PX = 56;
-
-function midiToNoteName(midi: number): string {
-  const rounded = Math.round(midi);
-  const note = NOTE_NAMES[((rounded % 12) + 12) % 12] ?? 'C';
-  const octave = Math.floor(rounded / 12) - 1;
-  return `${note}${octave}`;
-}
 
 export function buildPitchGraphAriaLabel(minMidi: number, maxMidi: number, windowSeconds: number): string {
   return `Real-time pitch graph showing your sung pitch (${midiToNoteName(minMidi)}–${midiToNoteName(maxMidi)}) over a ${windowSeconds}-second rolling window`;
@@ -65,9 +87,18 @@ function frequencyToMidi(freq: number): number {
   return 69 + (12 * Math.log2(freq / 440));
 }
 
-export function timeToGraphX(sampleSec: number, nowSec: number, width: number, windowSec: number): number {
-  const age = nowSec - sampleSec;
-  const x = width - ((age / windowSec) * width);
+/**
+ * Maps a sample/target timestamp to an X position. `playheadRatio` (0-1,
+ * default 1) is where "now" sits as a fraction of the width — the default
+ * reproduces the original rolling-graph behavior (now pinned at the right
+ * edge); PitchGraphCanvas itself always calls this with
+ * DEFAULT_PLAYHEAD_RATIO internally so history trails left of a fixed
+ * playhead and setTargets() pills can appear ahead of it to the right.
+ */
+export function timeToGraphX(sampleSec: number, nowSec: number, width: number, windowSec: number, playheadRatio = 1): number {
+  const pxPerSec = width / windowSec;
+  const playheadX = width * playheadRatio;
+  const x = playheadX + ((sampleSec - nowSec) * pxPerSec);
   return Math.max(0, Math.min(width, x));
 }
 
@@ -83,6 +114,25 @@ export function buildSemitoneGrid(minMidi = GRAPH_MIDI_MIN, maxMidi = GRAPH_MIDI
     lines.push({ midi, isOctave, isBlackKey, label: midiToScaleLabel(midi) });
   }
   return lines;
+}
+
+/**
+ * Labels for the rainbow scale bar — unlike buildSemitoneGrid() (naturals
+ * only, for the old plain grid), these use every note name including
+ * sharps at a fixed semitone step, since the scale bar has room for only a
+ * handful of labels regardless of which notes they land on.
+ */
+export function buildScaleBarLabels(
+  minMidi: number,
+  maxMidi: number,
+  stepSemitones: number = SCALE_LABEL_STEP_SEMITONES,
+): { midi: number; label: string }[] {
+  const labels: { midi: number; label: string }[] = [];
+  const start = Math.ceil(minMidi / stepSemitones) * stepSemitones;
+  for (let midi = start; midi <= maxMidi; midi += stepSemitones) {
+    labels.push({ midi, label: midiToNoteName(midi) });
+  }
+  return labels;
 }
 
 /**
@@ -118,6 +168,7 @@ export class PitchGraphCanvas {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly opts: Required<PitchGraphOptions>;
   private samples: GraphSample[] = [];
+  private targets: GraphTargetPill[] = [];
   private fullRangeMinMidi = GRAPH_MIDI_MIN;
   private fullRangeMaxMidi = GRAPH_MIDI_MAX;
   private viewRangeMinMidi = GRAPH_MIDI_MIN;
@@ -126,7 +177,7 @@ export class PitchGraphCanvas {
   constructor(container: HTMLElement, opts: PitchGraphOptions = {}) {
     this.opts = {
       windowSeconds: opts.windowSeconds ?? 10,
-      backgroundColor: opts.backgroundColor ?? '#0d162a',
+      backgroundColor: opts.backgroundColor ?? '#ffffff',
       bandCentsTolerance: opts.bandCentsTolerance ?? DEFAULT_BAND_CENTS_TOLERANCE,
     };
     this.canvas = document.createElement('canvas');
@@ -152,6 +203,15 @@ export class PitchGraphCanvas {
       expectedMidi,
       color: classifyGraphTraceColor(frame.midi, expectedMidi),
     });
+  }
+
+  /**
+   * Full set of exercise targets (including ones not reached yet) so the
+   * "note highway" can render upcoming pills ahead of the playhead, not
+   * just a band over targets a frame has already been pushed for.
+   */
+  setTargets(targets: GraphTargetPill[]): void {
+    this.targets = targets;
   }
 
   tick(nowSec: number): void {
@@ -226,168 +286,151 @@ export class PitchGraphCanvas {
   private redraw(nowSec: number): void {
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
-    const plotLeft = Math.min(KEYBOARD_GUTTER_PX, width * 0.2);
+    const plotLeft = Math.min(SCALE_BAR_WIDTH, width * 0.18);
     const plotWidth = Math.max(1, width - plotLeft);
 
     this.ctx.fillStyle = this.opts.backgroundColor;
     this.ctx.fillRect(0, 0, width, height);
 
-    this.drawKeyboardScale(plotLeft, height);
-    this.drawYGrid(plotLeft, plotWidth, height);
-    this.drawXGrid(nowSec, plotLeft, plotWidth, height);
-    // Band must be drawn before the sung trace so the trace renders on top.
-    this.drawTargetBand(nowSec, plotLeft, plotWidth, height);
+    this.drawDotGrid(plotLeft, plotWidth, height);
+    this.drawScaleBar(plotLeft, height);
+    // Layer order (bottom -> top): dot grid -> scale bar -> target pills ->
+    // sung trace -> puck, so the puck always reads as "on top."
+    this.drawTargetPills(nowSec, plotLeft, plotWidth, height);
     this.drawTrace(nowSec, plotLeft, plotWidth, height);
+    this.drawPuck(nowSec, plotLeft, plotWidth, height);
+  }
+
+  /** Soft dotted background across the plot area — replaces solid gridlines. */
+  private drawDotGrid(plotLeft: number, plotWidth: number, height: number): void {
+    this.ctx.fillStyle = 'rgba(43, 36, 56, 0.12)';
+    for (let y = DOT_GRID_SPACING_Y / 2; y < height; y += DOT_GRID_SPACING_Y) {
+      for (let x = plotLeft + (DOT_GRID_SPACING_X / 2); x < plotLeft + plotWidth; x += DOT_GRID_SPACING_X) {
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, DOT_GRID_RADIUS, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
+  }
+
+  /** Rainbow gradient bar mapping pitch height to color, with a few note-name labels. */
+  private drawScaleBar(plotLeft: number, height: number): void {
+    const barWidth = Math.max(0, plotLeft - 8);
+    const gradient = this.ctx.createLinearGradient(0, 0, 0, height);
+    const stops = 12;
+    for (let i = 0; i <= stops; i += 1) {
+      const t = i / stops;
+      const midiAtStop = this.viewRangeMaxMidi - (t * (this.viewRangeMaxMidi - this.viewRangeMinMidi));
+      gradient.addColorStop(t, colorForMidi(midiAtStop, this.viewRangeMinMidi, this.viewRangeMaxMidi, 68, 62));
+    }
+    this.ctx.fillStyle = gradient;
+    this.ctx.beginPath();
+    this.ctx.roundRect(4, 4, barWidth, Math.max(0, height - 8), 10);
+    this.ctx.fill();
+
+    const labels = buildScaleBarLabels(this.viewRangeMinMidi, this.viewRangeMaxMidi);
+    this.ctx.font = '600 10px system-ui, sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    for (const { midi, label } of labels) {
+      const y = midiToGraphY(midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
+      this.ctx.fillText(label, 4 + (barWidth / 2), y + 3);
+    }
   }
 
   /**
-   * Draws the target-note band as a semi-transparent blue filled rectangle
-   * for each contiguous segment where the expected MIDI note is the same.
-   * A thin centre line is drawn inside the band for pitch precision.
-   *
-   * Layer order (bottom → top): band fill → centre line → sung trace.
+   * Upcoming/active exercise targets as pill badges — active (playhead is
+   * inside its time window) in the app's "good" accent color, everything
+   * else upcoming in a lighter accent. Targets fully outside the visible
+   * time window are skipped rather than drawn as degenerate zero-width
+   * pills at the edge.
    */
-  private drawTargetBand(nowSec: number, plotLeft: number, plotWidth: number, height: number): void {
-    if (this.samples.length === 0) return;
+  private drawTargetPills(nowSec: number, plotLeft: number, plotWidth: number, height: number): void {
+    if (this.targets.length === 0) return;
 
-    const tolerance = this.opts.bandCentsTolerance;
+    const historySpanSec = this.opts.windowSeconds * DEFAULT_PLAYHEAD_RATIO;
+    const futureSpanSec = this.opts.windowSeconds - historySpanSec;
 
-    // Walk samples; flush a band rectangle whenever expectedMidi changes or
-    // a sample has no expected note.
-    let segStart: number | null = null;
-    let segEnd: number | null = null;
-    let segMidi: number | null = null;
+    for (const target of this.targets) {
+      const startSec = target.startMs / 1000;
+      const endSec = target.endMs / 1000;
+      if (endSec < nowSec - historySpanSec || startSec > nowSec + futureSpanSec) continue;
 
-    const flushSegment = (): void => {
-      if (segStart === null || segEnd === null || segMidi === null) return;
-      const x1 = plotLeft + timeToGraphX(segStart, nowSec, plotWidth, this.opts.windowSeconds);
-      const x2 = plotLeft + timeToGraphX(segEnd, nowSec, plotWidth, this.opts.windowSeconds);
-      const { topY, bottomY } = targetBandY(segMidi, tolerance, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
-      const bandHeight = Math.max(1, bottomY - topY);
+      const x1 = plotLeft + timeToGraphX(startSec, nowSec, plotWidth, this.opts.windowSeconds, DEFAULT_PLAYHEAD_RATIO);
+      const x2 = plotLeft + timeToGraphX(endSec, nowSec, plotWidth, this.opts.windowSeconds, DEFAULT_PLAYHEAD_RATIO);
+      const y = midiToGraphY(target.midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
+      const isActive = nowSec >= startSec && nowSec < endSec;
+      const pillWidth = Math.max(x2 - x1, PILL_HEIGHT);
 
-      // Band fill
-      this.ctx.fillStyle = 'rgba(100, 180, 255, 0.18)';
-      this.ctx.fillRect(x1, topY, x2 - x1, bandHeight);
-
-      // Centre line — exact expected pitch for precision reference
-      const centreY = midiToGraphY(segMidi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
-      this.ctx.strokeStyle = 'rgba(100, 180, 255, 0.75)';
-      this.ctx.lineWidth = 1.5;
+      this.ctx.fillStyle = isActive ? 'rgba(52, 211, 153, 0.92)' : 'rgba(198, 233, 74, 0.85)';
       this.ctx.beginPath();
-      this.ctx.moveTo(x1, centreY);
-      this.ctx.lineTo(x2, centreY);
-      this.ctx.stroke();
-    };
+      this.ctx.roundRect(x1, y - (PILL_HEIGHT / 2), pillWidth, PILL_HEIGHT, PILL_HEIGHT / 2);
+      this.ctx.fill();
 
-    for (const sample of this.samples) {
-      if (sample.expectedMidi === null) {
-        flushSegment();
-        segStart = null;
-        segEnd = null;
-        segMidi = null;
-        continue;
-      }
-
-      if (segMidi !== null && sample.expectedMidi !== segMidi) {
-        flushSegment();
-        segStart = sample.tSec;
-        segEnd = sample.tSec;
-        segMidi = sample.expectedMidi;
-      } else {
-        if (segStart === null) segStart = sample.tSec;
-        segEnd = sample.tSec;
-        segMidi = sample.expectedMidi;
-      }
-    }
-    flushSegment();
-  }
-
-  private drawKeyboardScale(plotLeft: number, height: number): void {
-    this.ctx.fillStyle = '#0a0f1c';
-    this.ctx.fillRect(0, 0, plotLeft, height);
-
-    const lines = buildSemitoneGrid(Math.floor(this.viewRangeMinMidi), Math.ceil(this.viewRangeMaxMidi));
-    for (const line of lines) {
-      if (!line.isBlackKey) continue;
-      const topY = midiToGraphY(line.midi + 0.5, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
-      const bottomY = midiToGraphY(line.midi - 0.5, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
-      const keyHeight = bottomY - topY;
-      this.ctx.fillStyle = 'rgba(17, 24, 39, 0.95)';
-      this.ctx.fillRect(0, topY, plotLeft * 0.64, keyHeight);
-    }
-
-    this.ctx.strokeStyle = 'rgba(168, 190, 220, 0.3)';
-    this.ctx.lineWidth = 1;
-    this.ctx.beginPath();
-    this.ctx.moveTo(plotLeft, 0);
-    this.ctx.lineTo(plotLeft, height);
-    this.ctx.stroke();
-  }
-
-  private drawYGrid(plotLeft: number, plotWidth: number, height: number): void {
-    const lines = buildSemitoneGrid(Math.floor(this.viewRangeMinMidi), Math.ceil(this.viewRangeMaxMidi));
-    for (const line of lines) {
-      const y = midiToGraphY(line.midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
-      this.ctx.strokeStyle = line.isOctave ? 'rgba(168, 190, 220, 0.45)' : 'rgba(168, 190, 220, 0.15)';
-      this.ctx.lineWidth = line.isOctave ? 1.5 : 1;
-      this.ctx.beginPath();
-      this.ctx.moveTo(plotLeft, y);
-      this.ctx.lineTo(plotLeft + plotWidth, y);
-      this.ctx.stroke();
-
-      if (line.label) {
-        this.ctx.fillStyle = '#c6d8f3';
-        this.ctx.font = '12px system-ui, sans-serif';
-        this.ctx.fillText(line.label, 5, y - 2);
+      if (target.label) {
+        this.ctx.fillStyle = isActive ? '#ffffff' : '#3a4a1a';
+        this.ctx.font = '600 12px system-ui, sans-serif';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(target.label, x1 + 12, y + 4, Math.max(0, pillWidth - 20));
       }
     }
   }
 
-  private drawXGrid(nowSec: number, plotLeft: number, plotWidth: number, height: number): void {
-    const newestWhole = Math.floor(nowSec);
-    const oldest = nowSec - this.opts.windowSeconds;
-
-    this.ctx.strokeStyle = 'rgba(240, 240, 255, 0.15)';
-    this.ctx.lineWidth = 1;
-
-    for (let sec = newestWhole; sec >= oldest; sec -= 1) {
-      const x = plotLeft + timeToGraphX(sec, nowSec, plotWidth, this.opts.windowSeconds);
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, 0);
-      this.ctx.lineTo(x, height);
-      this.ctx.stroke();
-    }
-  }
-
+  /** Thick, round-capped, pitch-height-colored trace — history only, never ahead of the playhead. */
   private drawTrace(nowSec: number, plotLeft: number, plotWidth: number, height: number): void {
     if (this.samples.length < 2) return;
 
-    this.ctx.lineWidth = 2;
+    this.ctx.lineWidth = TRACE_LINE_WIDTH;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
 
     for (let i = 1; i < this.samples.length; i += 1) {
       const prev = this.samples[i - 1];
       const next = this.samples[i];
+      if (next.tSec > nowSec) break;
 
-      const x1 = plotLeft + timeToGraphX(prev.tSec, nowSec, plotWidth, this.opts.windowSeconds);
+      const x1 = plotLeft + timeToGraphX(prev.tSec, nowSec, plotWidth, this.opts.windowSeconds, DEFAULT_PLAYHEAD_RATIO);
       const y1 = midiToGraphY(prev.midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
-      const x2 = plotLeft + timeToGraphX(next.tSec, nowSec, plotWidth, this.opts.windowSeconds);
+      const x2 = plotLeft + timeToGraphX(next.tSec, nowSec, plotWidth, this.opts.windowSeconds, DEFAULT_PLAYHEAD_RATIO);
       const y2 = midiToGraphY(next.midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
 
-      this.ctx.strokeStyle = this.cssColor(next.color);
-      this.ctx.setLineDash(traceLineDash(next.color));
+      this.ctx.strokeStyle = colorForMidi(next.midi, this.viewRangeMinMidi, this.viewRangeMaxMidi);
       this.ctx.beginPath();
       this.ctx.moveTo(x1, y1);
       this.ctx.lineTo(x2, y2);
       this.ctx.stroke();
     }
-
-    this.ctx.setLineDash([]);
   }
 
-  private cssColor(color: GraphTraceColor): string {
-    if (color === 'green') return '#39d98a';
-    if (color === 'red') return '#ff9f1c';
-    return '#9aa4b2';
+  /**
+   * Fixed-position "you are here" marker at the playhead. Its outer ring
+   * reuses the frame's in-tune/out-of-tune classification (GraphSample.color,
+   * still computed in pushFrame() for exactly this) — the one place accuracy
+   * feedback survives the switch to pitch-height trace coloring.
+   */
+  private drawPuck(nowSec: number, plotLeft: number, plotWidth: number, height: number): void {
+    if (this.samples.length === 0) return;
+    const last = this.samples[this.samples.length - 1];
+    if (nowSec - last.tSec > PUCK_STALE_SEC) return;
+
+    const x = plotLeft + (plotWidth * DEFAULT_PLAYHEAD_RATIO);
+    const y = midiToGraphY(last.midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
+
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, PUCK_OUTER_RADIUS, 0, Math.PI * 2);
+    this.ctx.fillStyle = this.puckRingColor(last.color);
+    this.ctx.fill();
+
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, PUCK_INNER_RADIUS, 0, Math.PI * 2);
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fill();
+  }
+
+  private puckRingColor(color: GraphTraceColor): string {
+    if (color === 'green') return '#1a8a63';
+    if (color === 'red') return '#b91c1c';
+    return '#2b2438';
   }
 
   private resize = (): void => {

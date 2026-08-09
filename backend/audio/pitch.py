@@ -37,13 +37,39 @@ log = logging.getLogger(__name__)
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 SAMPLE_RATE: int = 22050
-CONFIDENCE_THRESHOLD: float = 0.6
+# Chosen from measured separation between real singing and an ambient room,
+# captured through this exact pipeline (see the center=False note in
+# _infer_pyin for the companion fix — both were needed):
+#
+#                     median conf   max conf   fraction >= 0.25
+#   ambient room         0.010        0.109          0%
+#   real singing         0.280        0.485        ~58%
+#
+# pYIN's voiced_prob is quantised to discrete HMM posterior levels
+# (0.010, 0.109, 0.207, 0.280, 0.372, 0.426, 0.485, 0.549, ...), and real
+# voice through a laptop mic tops out around 0.485 — so the previous 0.6,
+# and even 0.5, accepted literally 0% of real singing while ambient noise
+# was never above 0.109. 0.25 sits with margin on both sides.
+#
+# Deliberately NOT paired with an absolute amplitude gate: pYIN's confidence
+# is a periodicity measure and is essentially level-independent (synthetic
+# tones at peak 0.2 and 0.03 score identically), so gating on loudness would
+# add a new failure mode for quiet mics without improving noise rejection.
+CONFIDENCE_THRESHOLD: float = 0.25
 
 # torchcrepe expects 16 kHz — we resample on the fly
 CREPE_SAMPLE_RATE: int = 16000
 
 # pYIN frequency range — human singing voice
-FMIN_HZ: float = 65.0    # C2
+# FMIN_HZ was 65.0 (C2) — lowered after a live diagnostic session (range
+# test "glide down" phase) showed the detected frequency pin exactly to
+# 65.0Hz with confidence collapsing to ~0.01 as the singer's real voice
+# went below the search floor: pYIN can't represent a pitch below fmin, so
+# it clamps to the boundary and (correctly) reports near-zero confidence
+# for that clamped, not-actually-real reading. 49.0Hz (G1) gives headroom
+# for genuinely low/bass voices without extending so far that mic rumble
+# or room hum starts getting picked up as a candidate pitch.
+FMIN_HZ: float = 49.0    # G1
 FMAX_HZ: float = 2093.0  # C7
 
 
@@ -195,8 +221,22 @@ def _infer_pyin(
     """
     import librosa  # noqa: PLC0415
 
-    # librosa.pyin returns (f0, voiced_flag, voiced_prob) arrays
-    # hop_length = window length gives us a single frame
+    # librosa.pyin returns (f0, voiced_flag, voiced_prob) arrays.
+    # hop_length = frame_length = window length gives us a single frame.
+    #
+    # center=False is REQUIRED here, not a tuning preference. With librosa's
+    # default center=True the signal is zero-padded by frame_length//2 and
+    # frame 0 is centred at sample 0 — so half of the frame we then read
+    # (f0[0]/voiced_prob[0]) is analysing zero-padding, not audio. pYIN's
+    # voiced_prob comes from an HMM that has also accumulated no evidence at
+    # frame 0, so it reads out near its ~0.01 floor no matter how clean the
+    # input is. Measured on synthetic voice-like tones at realistic level:
+    # a 118Hz note scored 0.128 with center=True vs 0.827 with center=False,
+    # and only 3/10 tones across G1-C5 cleared threshold vs 9/10.
+    # Low pitches were hit worst (fewer periods per window => less evidence),
+    # which is exactly how this surfaced: "can't detect low pitch".
+    # Pure noise still scores ~0.010 either way, so this does not trade
+    # accuracy for false positives. Cost is ~+2ms/frame, well inside budget.
     f0, voiced_flag, voiced_prob = librosa.pyin(
         window,
         fmin=FMIN_HZ,
@@ -204,6 +244,7 @@ def _infer_pyin(
         sr=SAMPLE_RATE,
         hop_length=len(window),
         frame_length=len(window),
+        center=False,
     )
 
     if f0 is None or len(f0) == 0:
@@ -214,6 +255,18 @@ def _infer_pyin(
     voiced = bool(voiced_flag[0]) if voiced_flag is not None else False
 
     if not voiced or conf < CONFIDENCE_THRESHOLD or freq_hz <= 0:
+        # Diagnostic for "detection feels weak / drops out" reports. Logs the
+        # window's peak amplitude alongside the rejected reading, which is
+        # what separates "mic is delivering silence" (peak ~= noise floor,
+        # conf at pYIN's ~0.010 floor) from "real voice present but scored
+        # under threshold" (healthy peak, mid-range conf). Kept at debug so
+        # it costs nothing normally; enable with LOG_LEVEL=DEBUG.
+        if log.isEnabledFor(logging.DEBUG) and freq_hz > 0:
+            peak = float(np.max(np.abs(window))) if window.size else 0.0
+            log.debug(
+                "pYIN dropped frame: freq=%.1fHz midi=%.1f conf=%.3f voiced=%s peak=%.5f (need conf>=%.2f)",
+                freq_hz, hz_to_midi(freq_hz), conf, voiced, peak, CONFIDENCE_THRESHOLD,
+            )
         return None
 
     return PitchFrame(

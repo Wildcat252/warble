@@ -1,5 +1,12 @@
-import { beatToSeconds } from '../playback/engine';
-import type { ScoreModel } from '../score/renderer';
+/**
+ * Thin REST wrappers over the backend's /playback/* endpoints.
+ *
+ * Trimmed during the Warble rework: the tempo/transpose/beat helpers that
+ * used to live here only made sense with a MusicXML score driving playback,
+ * and were removed alongside the score-following UI. What remains is
+ * score-independent capture control — start/pause/resume/stop the backend's
+ * microphone pipeline.
+ */
 
 export interface PlaybackCommandResponse {
   state: string;
@@ -13,6 +20,10 @@ async function postPlaybackCommand(path: string): Promise<PlaybackCommandRespons
   return await res.json() as PlaybackCommandResponse;
 }
 
+/**
+ * @param deviceId Backend PortAudio device index (see services/audio-device.ts),
+ *   or null to let the backend pick its own default input.
+ */
 export async function startPlayback(deviceId: number | null): Promise<PlaybackCommandResponse> {
   const query = deviceId === null ? '' : `?device_id=${encodeURIComponent(String(deviceId))}`;
   return await postPlaybackCommand(`/playback/start${query}`);
@@ -24,39 +35,4 @@ export async function postPlayback(path: string): Promise<PlaybackCommandRespons
 
 export async function seekPlayback(tMs: number): Promise<PlaybackCommandResponse> {
   return await postPlaybackCommand(`/playback/seek?t_ms=${encodeURIComponent(tMs.toFixed(1))}`);
-}
-
-export async function setPlaybackTempo(multiplier: number): Promise<void> {
-  const res = await fetch(`/playback/tempo?multiplier=${encodeURIComponent(multiplier.toFixed(3))}`, { method: 'POST' });
-  if (!res.ok) throw new Error(`Playback command failed: /playback/tempo (HTTP ${res.status})`);
-}
-
-/**
- * Notify the backend of the active transposition offset.
- *
- * The frontend applies the same offset via PlaybackEngine.setTransposeSemitones()
- * which adjusts Web Audio detune. Calling this endpoint keeps the backend
- * pipeline in sync so the pitch interpretation layer (Day 9) can shift
- * expected MIDI targets when comparing detected f0 against score notes.
- *
- * @param semitones - Integer semitone offset, clamped to [-12, +12] server-side.
- */
-export async function setPlaybackTranspose(semitones: number): Promise<void> {
-  const res = await fetch(
-    `/playback/transpose?semitones=${encodeURIComponent(Math.round(semitones))}`,
-    { method: 'POST' },
-  );
-  if (!res.ok) throw new Error(`Playback command failed: /playback/transpose (HTTP ${res.status})`);
-}
-
-/**
- * Convert a beat position to milliseconds using the score's tempo map.
- *
- * @param beat - Beat number relative to score start.
- * @param scoreModel - Score model containing the tempo mark array.
- * @param tempoMultiplier - Current playback speed multiplier (1.0 = normal).
- * @returns Elapsed milliseconds from beat 0 to the given beat.
- */
-export function beatToMs(beat: number, scoreModel: ScoreModel, tempoMultiplier: number): number {
-  return beatToSeconds(beat, scoreModel.tempo_marks, tempoMultiplier) * 1000;
 }

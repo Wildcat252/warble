@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPitchGraphAriaLabel,
+  buildScaleBarLabels,
   buildSemitoneGrid,
   DEFAULT_BAND_CENTS_TOLERANCE,
   GRAPH_MIDI_MAX,
@@ -11,7 +12,7 @@ import {
   timeToGraphX,
   traceLineDash,
 } from './graph';
-import { classifyGraphTraceColor, centsError, GRAPH_IN_TUNE_CENTS } from './graph-colors';
+import { classifyGraphTraceColor, centsError, colorForMidi, GRAPH_IN_TUNE_CENTS, hueForNormalizedHeight } from './graph-colors';
 
 
 
@@ -42,6 +43,18 @@ describe('graph coordinate helpers', () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.tSec).toBe(15);
   });
+
+  it('defaults to the old right-edge-is-now behavior when playheadRatio is omitted', () => {
+    expect(timeToGraphX(100, 100, 400, 10)).toBe(400);
+    expect(timeToGraphX(90, 100, 400, 10)).toBe(0);
+  });
+
+  it('places "now" at playheadRatio, history to the left and future to the right', () => {
+    // width=400, windowSec=10, playheadRatio=0.25 -> playhead at x=100, 40px/sec
+    expect(timeToGraphX(100, 100, 400, 10, 0.25)).toBe(100); // sampleSec === nowSec -> exactly at playhead
+    expect(timeToGraphX(97.5, 100, 400, 10, 0.25)).toBe(0); // 2.5s in the past -> 100 - 2.5*40 = 0
+    expect(timeToGraphX(105, 100, 400, 10, 0.25)).toBe(300); // 5s in the future -> 100 + 5*40 = 300
+  });
 });
 
 describe('graph color classification', () => {
@@ -54,6 +67,43 @@ describe('graph color classification', () => {
     expect(classifyGraphTraceColor(60.5, 60)).toBe('green');
     expect(classifyGraphTraceColor(60.51, 60)).toBe('red');
     expect(Math.round(centsError(60.51, 60))).toBe(51);
+  });
+});
+
+describe('note-highway rainbow color scale', () => {
+  it('sweeps from green at the top (t=0) toward blue/teal at the bottom (t=1), never wrapping back to green', () => {
+    expect(hueForNormalizedHeight(0)).toBeCloseTo(150, 5);
+    expect(hueForNormalizedHeight(1)).toBeCloseTo(((150 - 310) % 360 + 360) % 360, 5);
+    // Spans 310deg, not a full 360deg wrap, so the two ends stay visually distinct.
+    expect(hueForNormalizedHeight(1)).not.toBeCloseTo(hueForNormalizedHeight(0), 0);
+  });
+
+  it('clamps out-of-range t instead of extrapolating', () => {
+    expect(hueForNormalizedHeight(-0.5)).toBe(hueForNormalizedHeight(0));
+    expect(hueForNormalizedHeight(1.5)).toBe(hueForNormalizedHeight(1));
+  });
+
+  it('colors the top of a range green-ish and the bottom blue/teal-ish', () => {
+    const top = colorForMidi(84, 60, 84);
+    const bottom = colorForMidi(60, 60, 84);
+    expect(top).toContain('hsl(150');
+    expect(bottom).not.toContain('hsl(150');
+  });
+
+  it('is stable for a degenerate zero-span range instead of dividing by zero', () => {
+    expect(() => colorForMidi(60, 60, 60)).not.toThrow();
+  });
+});
+
+describe('buildScaleBarLabels', () => {
+  it('labels every step-th semitone (including sharps) across the range, not just naturals', () => {
+    const labels = buildScaleBarLabels(60, 72, 4);
+    expect(labels.map((l) => l.midi)).toEqual([60, 64, 68, 72]);
+    expect(labels.map((l) => l.label)).toEqual(['C4', 'E4', 'G#4', 'C5']);
+  });
+
+  it('returns nothing when no step-aligned midi falls within the range', () => {
+    expect(buildScaleBarLabels(61, 62, 4)).toEqual([]);
   });
 });
 

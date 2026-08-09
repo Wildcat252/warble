@@ -1,35 +1,20 @@
-import type { NoteModel } from '../score/renderer';
-
 export type DotColor = 'green' | 'amber' | 'red' | 'grey';
 export type CentsBand = 'green' | 'amber' | 'red';
 
 export const GREEN_CENTS_THRESHOLD = 50;
 export const AMBER_CENTS_THRESHOLD = 100;
-export const MIN_CONFIDENCE_FOR_DOT = 0.6;
-export const MIN_CONFIDENCE_FOR_SUMMARY = 0.55;
+// Kept in sync with backend/audio/pitch.py's CONFIDENCE_THRESHOLD — a
+// frontend floor HIGHER than the backend's would silently re-gate frames the
+// backend already decided were good enough to send. Both were 0.6, which
+// measurement showed accepts 0% of real singing through a laptop mic (see
+// that constant's comment for the measured ambient-vs-voice separation).
+export const MIN_CONFIDENCE_FOR_DOT = 0.25;
+export const MIN_CONFIDENCE_FOR_SUMMARY = 0.25;
 
-export function expectedNoteAtBeat(beat: number, notes: NoteModel[]): NoteModel | null {
-  if (notes.length === 0) return null;
-
-  let lo = 0;
-  let hi = notes.length - 1;
-  let idx = -1;
-
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (notes[mid].beat_start <= beat) {
-      idx = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-
-  if (idx < 0) return null;
-  const candidate = notes[idx];
-  const end = candidate.beat_start + candidate.duration;
-  return beat >= candidate.beat_start && beat < end ? candidate : null;
-}
+// expectedNoteAtBeat() lived here until the Warble rework. It resolved the
+// active note from a parsed MusicXML score by beat position; exercises are
+// scheduled in milliseconds instead, so its replacement is
+// exercises/timing.ts::expectedTargetAtTime.
 
 export function centsOffPitch(sungMidi: number, expectedMidi: number): number {
   return (sungMidi - expectedMidi) * 100;

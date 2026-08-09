@@ -1,5 +1,11 @@
-import { midiToFrequency } from '../pitch/note-name';
-import { getAudioContext } from '../services/audio-context';
+/**
+ * `WarmupTonePlayer` used to be defined here; it's now `TonePlayer` in
+ * audio/tone-player.ts (promoted so every exercise kind can use it, not
+ * just guided warm-ups). Re-exported under the old name for the
+ * still-on-disk-but-unregistered features/pitch-overlay — removed for real
+ * in the Phase 9 cleanup pass, at which point this alias goes too.
+ */
+export { TonePlayer as WarmupTonePlayer } from '../audio/tone-player';
 
 export interface WarmupSegment {
   exercise: 'sirens' | 'sustain' | 'scale' | 'range';
@@ -50,35 +56,4 @@ export function buildWarmupSequence(totalSeconds: number, anchorMidi = 60): Warm
 export function warmupMidiAt(elapsedMs: number, sequence: WarmupSegment[]): number | null {
   const seg = sequence.find((s) => elapsedMs >= s.startMs && elapsedMs < s.endMs);
   return seg?.midi ?? null;
-}
-
-export class WarmupTonePlayer {
-  private lastMidi: number | null = null;
-  private lastPlayedAt = 0;
-
-  playExpectedMidi(midi: number | null): void {
-    if (midi === null) return;
-    const now = performance.now();
-    if (this.lastMidi === midi && (now - this.lastPlayedAt) < 450) return;
-
-    const ctx = getAudioContext();
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
-    }
-    const t0 = ctx.currentTime + 0.01;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = midiToFrequency(midi);
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.06, t0 + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + 0.3);
-
-    this.lastMidi = midi;
-    this.lastPlayedAt = now;
-  }
 }

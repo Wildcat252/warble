@@ -1,0 +1,125 @@
+.exercise-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.exercise-player__header h1 {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-1);
+}
+.exercise-player__header p {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+.exercise-player__progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+}
+.dot--current {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.dot--hit {
+  background: var(--color-good);
+  border-color: var(--color-good);
+}
+.dot--miss {
+  background: var(--color-bad);
+  border-color: var(--color-bad);
+}
+
+.exercise-player__status {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* Card frame around the graph — pitch/graph.ts renders its own light,
+ * "note highway" style background (rainbow pitch scale, dotted grid), this
+ * just gives it a bordered card frame consistent with the rest of the page. */
+.exercise-player__graph-card {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.exercise-player__readouts {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-md);
+}
+.exercise-player__detected[data-tone='good'] {
+  color: var(--color-good);
+}
+.exercise-player__detected[data-tone='off'] {
+  color: var(--color-warn);
+}
+.exercise-player__detected[data-tone='none'] {
+  color: var(--color-text-muted);
+}
+
+.exercise-player__graph {
+  height: 320px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+/* "Exercise not found" state — previously borrowed the shared placeholder
+ * screen's styles, which were removed once every screen became real. */
+.exercise-notfound {
+  padding: var(--space-8);
+  display: flex;
+  justify-content: center;
+}
+.exercise-notfound .card {
+  max-width: 480px;
+  text-align: center;
+}
+.exercise-notfound h1 {
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-2);
+}
+.exercise-notfound p {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+.exercise-summary {
+  text-align: center;
+}
+.exercise-summary h2 {
+  font-size: var(--text-xl);
+  margin-bottom: var(--space-4);
+}
+.exercise-summary__list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+}
+.exercise-summary__note {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-4);
+}

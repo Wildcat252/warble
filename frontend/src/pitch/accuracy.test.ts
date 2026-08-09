@@ -2,44 +2,23 @@ import { describe, expect, it } from 'vitest';
 import {
   AMBER_CENTS_THRESHOLD,
   GREEN_CENTS_THRESHOLD,
+  MIN_CONFIDENCE_FOR_DOT,
   centsOffPitch,
   classifyByCents,
   classifyPitchColor,
-  expectedNoteAtBeat,
   isWithinTolerance,
 } from './accuracy';
-import type { NoteModel } from '../score/renderer';
-
-const notes: NoteModel[] = [
-  { midi: 60, beat_start: 0, duration: 1, measure: 1, part: 'S', lyric: null },
-  { midi: 62, beat_start: 1, duration: 2, measure: 1, part: 'S', lyric: null },
-  { midi: 64, beat_start: 3, duration: 1, measure: 2, part: 'S', lyric: null },
-];
-
-describe('expectedNoteAtBeat', () => {
-  it('returns null before first note', () => {
-    expect(expectedNoteAtBeat(-0.1, notes)).toBeNull();
-  });
-
-  it('finds active note at exact start and interior beats', () => {
-    expect(expectedNoteAtBeat(0, notes)?.midi).toBe(60);
-    expect(expectedNoteAtBeat(1.5, notes)?.midi).toBe(62);
-  });
-
-  it('returns null in a gap or at note end boundary', () => {
-    expect(expectedNoteAtBeat(4, notes)).toBeNull();
-    expect(expectedNoteAtBeat(3, notes)?.midi).toBe(64);
-  });
-});
 
 describe('classifyPitchColor', () => {
-  it('returns grey for low confidence (conf < 0.6)', () => {
-    expect(classifyPitchColor(60, 60, 0.59)).toBe('grey');
+  it('returns grey below MIN_CONFIDENCE_FOR_DOT, and colours at/above it', () => {
+    // Derived from the constant rather than hardcoded, so retuning the
+    // confidence threshold against real-mic data doesn't break this test.
+    expect(classifyPitchColor(60, 60, MIN_CONFIDENCE_FOR_DOT - 0.01)).toBe('grey');
+    expect(classifyPitchColor(60, 60, MIN_CONFIDENCE_FOR_DOT)).toBe('green');
   });
 
-  // Rest suppression is enforced by PitchOverlay.pushFrame() which checks
-  // expectedNoteAtBeat() and returns early when null — classifyPitchColor
-  // is never called during rests and no longer accepts null as expectedMidi.
+  // classifyPitchColor is only called when a target note is active, so it
+  // does not accept null as expectedMidi.
 
 
   it('accepts a custom confidence threshold', () => {

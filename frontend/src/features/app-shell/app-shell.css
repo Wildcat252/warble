@@ -1,0 +1,65 @@
+#app-header-brand {
+  font-size: var(--text-md);
+  font-weight: var(--font-black);
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+#app-status {
+  margin-left: auto;
+}
+#app-status-text {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+#app-status-text[data-tone='success'] {
+  color: var(--color-good);
+}
+#app-status-text[data-tone='error'] {
+  color: var(--color-bad);
+}
+#app-status-text[data-tone='warning'] {
+  color: var(--color-warn);
+}
+
+#app-back-btn {
+  padding: var(--space-2) var(--space-3);
+}
+#app-back-btn.hidden {
+  display: none;
+}
+
+.app-nav__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.app-nav__item:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+}
+.app-nav__item--active {
+  background: var(--color-surface-alt);
+  color: var(--color-primary-dark);
+}
+@media (max-width: 900px) {
+  .app-nav__item {
+    justify-content: center;
+    padding: var(--space-3) var(--space-2);
+    width: auto;
+    flex: 1;
+    text-align: center;
+    font-size: var(--text-xs);
+  }
+}

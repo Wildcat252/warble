@@ -1,214 +1,192 @@
-import { expect, test } from '@playwright/test';
-import { fileURLToPath } from 'url';
-import path from 'path';
+import { expect, test, type Page } from '@playwright/test';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * E2E for the Warble exercise flow.
+ *
+ * Backend routes are mocked so this runs without a FastAPI process or audio
+ * hardware. Real pitch capture is server-side (Python/sounddevice), so an
+ * exercise can never be *sung* here — these tests cover navigation, the
+ * gamification state machine, and persistence, which is exactly the part
+ * that unit tests can't verify end-to-end through the real DOM/router.
+ */
 
-// The /score mock must match ScoreModel exactly — score-loader uses the
-// backend response (not OSMD) to populate #score-info and schedule notes.
-const scoreModel = {
-  title: 'E2E Mock Score',
-  parts: ['Soprano'],
-  notes: [
-    { midi: 60, beat_start: 0, duration: 4, measure: 1, part: 'Soprano', lyric: null },
-    { midi: 62, beat_start: 4, duration: 4, measure: 2, part: 'Soprano', lyric: null },
-  ],
-  tempo_marks: [{ beat: 0, bpm: 120 }],
-  time_signatures: [{ beat: 0, numerator: 4, denominator: 4 }],
-  total_beats: 8,
-};
+/** The pitch WebSocket can't connect without a backend; not a failure. */
+const IGNORED_ERRORS = ['/ws/pitch', 'WebSocket'];
 
-// Known-benign errors that do not indicate a test failure.
-// The pitch WebSocket always fails in E2E because there is no backend process.
-const IGNORED_ERRORS = [
-  '/ws/pitch',
-];
-
-const DEFAULT_VIEWPORT = { width: 1440, height: 900 } as const;
-const MIN_SCORE_PANEL_HEIGHT_PX = 200;
-
-async function mockBackendRoutes(page: import('@playwright/test').Page): Promise<void> {
-  // Match only exact-path backend routes to avoid intercepting Vite JS module requests.
+async function mockBackendRoutes(page: Page): Promise<void> {
+  // Exact-path matching only, so Vite's JS module requests aren't intercepted.
   await page.route((url) => url.pathname === '/health', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: 'e2e' }) });
-  });
-
-  await page.route((url) => url.pathname === '/score', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(scoreModel) });
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok', version: 'e2e' }),
+    });
   });
 
   await page.route((url) => url.pathname === '/audio/devices', async (route) => {
     await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
+      status: 200, contentType: 'application/json',
       body: JSON.stringify({
-        devices: [{ id: 1, name: 'Mock Mic', is_default: true }],
         default_device_id: 1,
+        devices: [{ id: 1, name: 'Mock Mic', channels: 1, host_api: 'Core Audio', default_sample_rate: 48000 }],
       }),
     });
   });
 
   await page.route((url) => url.pathname === '/audio/engine', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ backend: 'mock' }) });
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        active_engine: 'pyin', mode: 'auto', switchable: true,
+        cuda: false, device: 'CPU', force_cpu: false, xrun_count: 0,
+      }),
+    });
   });
 
   await page.route((url) => url.pathname.startsWith('/playback/'), async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ t_ms: 0 }) });
-  });
-
-  await page.route('**/soundfonts/**', async (route) => {
     await route.fulfill({
-      status: 200,
-      contentType: 'application/javascript',
-      body: 'MIDI.Soundfont.acoustic_grand_piano = {};',
-    });
-  });
-
-  await page.route('https://gleitz.github.io/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/javascript',
-      body: 'MIDI.Soundfont.acoustic_grand_piano = {};',
-    });
-  });
-
-  await page.route('https://cdn.jsdelivr.net/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/javascript',
-      body: 'MIDI.Soundfont.acoustic_grand_piano = {};',
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ state: 'PLAYING', t_ms: 0 }),
     });
   });
 }
 
-async function waitForScoreLayoutToStabilize(page: import('@playwright/test').Page): Promise<void> {
-  await expect(page.locator('#score-container svg')).toBeVisible({ timeout: 15000 });
-  await page.waitForFunction(() => {
-    const scoreContainer = document.getElementById('score-container');
-    const svg = scoreContainer?.querySelector('svg');
-    if (!scoreContainer || !svg) return false;
-
-    const containerHeight = Math.round(scoreContainer.getBoundingClientRect().height);
-    const svgHeight = Math.round(svg.getBoundingClientRect().height);
-    if (containerHeight <= 0 || svgHeight <= 0) return false;
-
-    const state = (window as Window & {
-      __scoreLayoutState?: { containerHeight: number; svgHeight: number; stableFrames: number };
-    });
-    const previous = state.__scoreLayoutState;
-    const stable = previous
-      && previous.containerHeight === containerHeight
-      && previous.svgHeight === svgHeight;
-
-    state.__scoreLayoutState = {
-      containerHeight,
-      svgHeight,
-      stableFrames: stable ? previous.stableFrames + 1 : 1,
-    };
-
-    return state.__scoreLayoutState.stableFrames >= 3;
-  }, { timeout: 15000 });
+function collectConsoleErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() !== 'error') return;
+    const text = msg.text();
+    if (IGNORED_ERRORS.some((ignored) => text.includes(ignored))) return;
+    errors.push(text);
+  });
+  return errors;
 }
 
-test('load -> play -> pause with mocked backend and no console errors', async ({ page }) => {
-  const consoleLogs: string[] = [];
-  page.on('console', (message) => {
-    consoleLogs.push(`[${message.type()}] ${message.text()}`);
-  });
+/** Writes practice-log entries directly, so gamification UI can be asserted without singing. */
+async function seedPracticeLog(
+  page: Page,
+  entries: { daysAgo: number; xpEarned: number; accuracyPct?: number }[],
+): Promise<void> {
+  await page.evaluate((seed) => {
+    const key = 'warble.practice-log.v1';
+    const rows = seed.map((e, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - e.daysAgo);
+      d.setHours(12, 0, 0, 0);
+      return {
+        id: `e2e-${i}`,
+        timestamp: d.toISOString(),
+        exerciseId: 'note-hold-basic',
+        exerciseKind: 'note-hold',
+        accuracyPct: e.accuracyPct ?? 80,
+        durationMs: 18000,
+        xpEarned: e.xpEarned,
+        minMidi: 55,
+        maxMidi: 67,
+      };
+    });
+    window.localStorage.setItem(key, JSON.stringify(rows));
+  }, entries);
+}
 
+test.beforeEach(async ({ page }) => {
   await mockBackendRoutes(page);
-  await page.setViewportSize(DEFAULT_VIEWPORT);
-
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-
-  // Before file upload: score-info should be empty — no score loaded yet.
-  await expect(page.locator('#score-info')).toHaveText('');
-
-  // Use a plain .xml fixture — OSMD loads XML directly without unzipping.
-  const fixturePath = path.resolve(__dirname, 'fixtures', 'minimal.xml');
-  await page.locator('#file-input').setInputFiles(fixturePath);
-
-  // Title comes from the /score mock response (ScoreModel.title), not OSMD.
-  try {
-    await expect(page.locator('#score-info')).toContainText('E2E Mock Score', { timeout: 15000 });
-  } catch (e) {
-    console.error('=== Browser console output ===');
-    for (const log of consoleLogs) console.error(log);
-    throw e;
-  }
-
-  await waitForScoreLayoutToStabilize(page);
-  const scoreHeights = await page.locator('main').evaluate((mainEl) => {
-    const scoreContainer = document.getElementById('score-container');
-    return {
-      main: Math.round(mainEl.getBoundingClientRect().height),
-      scoreContainer: scoreContainer ? Math.round(scoreContainer.getBoundingClientRect().height) : 0,
-    };
-  });
-  // 200px leaves enough vertical space for a readable stave and click/seek overlay,
-  // while still catching the regression where the score area collapsed to ~28px.
-  expect(scoreHeights.main).toBeGreaterThan(MIN_SCORE_PANEL_HEIGHT_PX);
-  expect(scoreHeights.scoreContainer).toBeGreaterThan(MIN_SCORE_PANEL_HEIGHT_PX);
-
-  await expect(page.locator('#btn-play')).toBeEnabled();
-
-  await page.locator('#btn-play').click();
-
-  // Clicking play opens the audio preflight modal (mic setup).
-  // The "Allow microphone" button requests getUserMedia — fake media flags
-  // in playwright.config.ts grant permission automatically.
-  // Then click "Start rehearsal" to mark preflight complete and start playback.
-  const preflightModal = page.locator('#audio-preflight-modal');
-  if (await preflightModal.isVisible({ timeout: 2000 }).catch(() => false)) {
-    const requestMicButton = page.locator('#audio-preflight-request');
-    if (await requestMicButton.isVisible().catch(() => false)) {
-      await requestMicButton.click();
-    }
-    const startRehearsal = page.locator('#audio-preflight-continue');
-    await expect(startRehearsal).toBeEnabled({ timeout: 5000 });
-    await startRehearsal.click();
-  }
-
-  // #btn-start-rehearsal (warmup) is hidden by default.
-  await expect(page.locator('#btn-start-rehearsal')).toBeHidden();
-
-  await expect(page.locator('#btn-pause')).toBeEnabled({ timeout: 5000 });
-  // Button is now icon-only (❚❚); verify accessible label instead of visible text.
-  await expect(page.locator('#btn-pause')).toHaveAttribute('aria-label', /Pause/);
-
-  await page.locator('#btn-pause').click();
-
-  // After pausing the button switches to Resume icon (▶); label reflects this.
-  await expect(page.locator('#btn-pause')).toHaveAttribute('aria-label', /Resume/);
-  await expect(page.locator('#btn-play')).toBeEnabled();
-
-  // Filter out known-benign errors (pitch WebSocket fails without a backend process).
-  const unexpectedErrors = consoleLogs
-    .filter(l => l.startsWith('[error]'))
-    .filter(l => !IGNORED_ERRORS.some(known => l.includes(known)));
-  expect(unexpectedErrors).toEqual([]);
 });
 
-
-test('score container stays usable after viewport shrink', async ({ page }) => {
-  await mockBackendRoutes(page);
-  await page.setViewportSize(DEFAULT_VIEWPORT);
+test('boots to Home and reports backend health', async ({ page }) => {
+  const errors = collectConsoleErrors(page);
   await page.goto('/');
-  await page.waitForLoadState('networkidle');
 
-  const fixturePath = path.resolve(__dirname, 'fixtures', 'minimal.xml');
-  await page.locator('#file-input').setInputFiles(fixturePath);
-  await expect(page.locator('#score-info')).toContainText('E2E Mock Score', { timeout: 15000 });
-  await waitForScoreLayoutToStabilize(page);
+  await expect(page.getByRole('heading', { name: /ready to warm up/i })).toBeVisible();
+  await expect(page.locator('#app-status-text')).toContainText('backend ok');
+  expect(errors).toEqual([]);
+});
 
-  await page.setViewportSize({ width: 1280, height: 560 });
-  await waitForScoreLayoutToStabilize(page);
+test('navigates between every screen from the nav rail', async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.goto('/');
 
-  const scoreHeight = await page.locator('#score-container').evaluate((element) => {
-    return Math.round(element.getBoundingClientRect().height);
-  });
+  for (const [label, heading] of [
+    ['Exercises', /exercises/i],
+    ['Range Test', /find your voice type/i],
+    ['Progress', /progress/i],
+    ['Settings', /settings/i],
+    ['Home', /ready to warm up/i],
+  ] as const) {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    await expect(page.getByRole('heading', { name: heading }).first()).toBeVisible();
+  }
+  expect(errors).toEqual([]);
+});
 
-  expect(scoreHeight).toBeGreaterThan(MIN_SCORE_PANEL_HEIGHT_PX);
+test('exercise picker lists the catalog and opens the player', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Exercises', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'Note Hold' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Major Scale Climb' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Interval Jumps' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Guided Warm-up' })).toBeVisible();
+
+  await page.getByRole('heading', { name: 'Note Hold' }).click();
+
+  // Focus mode hides the nav rail while an exercise is running.
+  await expect(page.getByRole('heading', { name: 'Note Hold' })).toBeVisible();
+  await expect(page.locator('#app-nav')).toBeHidden();
+  // Starting the exercise must NOT pop the mic-setup modal (that moved to Settings).
+  await expect(page.locator('#audio-preflight-modal')).toBeHidden();
+});
+
+test('Home shows streak, level and daily-goal progress from stored history', async ({ page }) => {
+  await page.goto('/');
+  // 3 consecutive days ending today; 150 XP total crosses into level 2.
+  await seedPracticeLog(page, [
+    { daysAgo: 2, xpEarned: 50 },
+    { daysAgo: 1, xpEarned: 50 },
+    { daysAgo: 0, xpEarned: 50 },
+  ]);
+  await page.reload();
+
+  const stats = page.locator('.home-stats');
+  await expect(stats).toContainText('3');          // day streak
+  await expect(stats).toContainText('Level 2');
+  await expect(stats).toContainText('1 / 1');      // daily goal met
+  await expect(page.getByText(/today's goal is done/i)).toBeVisible();
+});
+
+test('Progress screen summarises history and can clear it', async ({ page }) => {
+  await page.goto('/');
+  await seedPracticeLog(page, [{ daysAgo: 1, xpEarned: 40 }, { daysAgo: 0, xpEarned: 60 }]);
+  await page.reload();
+
+  await page.getByRole('button', { name: 'Progress', exact: true }).click();
+  await expect(page.getByText('2 sessions so far.')).toBeVisible();
+  await expect(page.locator('.progress-summary')).toContainText('100'); // total XP
+
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: /clear history/i }).click();
+
+  // Subscribing to the log means clearing re-renders to the empty state live.
+  await expect(page.getByRole('heading', { name: /no practice yet/i })).toBeVisible();
+});
+
+test('Progress shows an empty state that routes into the picker', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Progress', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: /no practice yet/i })).toBeVisible();
+  await page.getByRole('button', { name: /start an exercise/i }).click();
+  await expect(page.getByRole('heading', { name: 'Exercises' })).toBeVisible();
+});
+
+test('Settings lists backend devices and persists the choice', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+
+  const deviceSelect = page.locator('#settings-device');
+  await expect(deviceSelect).toContainText('Mock Mic');
+
+  await deviceSelect.selectOption('1');
+  await expect
+    .poll(async () => page.evaluate(() => window.localStorage.getItem('warble.backend-device-id.v1')))
+    .toBe('1');
 });

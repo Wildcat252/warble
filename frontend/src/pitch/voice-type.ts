@@ -25,14 +25,38 @@ export const VOICE_TYPES: VoiceType[] = [
 
 const MIN_STABLE_NOTES = 10;
 const MIN_SEMITONE_SPAN = 5;
+/**
+ * Wider than ~4 octaves is not a human comfortable range — it means the
+ * measurement picked up octave errors or noise, so classifying it would be
+ * inventing a confident answer from bad input.
+ */
+const MAX_SEMITONE_SPAN = 48;
 
-export function classifyVoiceType(input: VoiceTypeClassificationInput): VoiceType | null {
-  if (!Number.isFinite(input.lowestMidi) || !Number.isFinite(input.highestMidi)) return null;
-  if (input.stableNoteCount < MIN_STABLE_NOTES) return null;
-  const span = input.highestMidi - input.lowestMidi;
-  if (!Number.isFinite(span) || span < MIN_SEMITONE_SPAN) return null;
+/**
+ * Classify from a measured range alone, matching the range's midpoint to the
+ * nearest voice type's midpoint.
+ *
+ * Deliberately has NO opinion about how the range was measured — that is the
+ * caller's business, because the two callers have genuinely different quality
+ * signals:
+ *
+ *   - The vocal range test asks the singer to glide to each extreme, so its
+ *     evidence is "we captured both endpoints with a plausible span". Gliding
+ *     by design never settles on discrete pitches.
+ *   - Passive tracking across a practice session has no deliberate endpoints,
+ *     so it needs a proxy for "we have heard enough of this voice" — see
+ *     classifyVoiceType() below.
+ *
+ * Conflating the two is what made a perfectly good G2–E5 range test return no
+ * suggestion: it was being judged by the passive tracker's stable-note count,
+ * which gliding cannot satisfy.
+ */
+export function voiceTypeForRange(lowestMidi: number, highestMidi: number): VoiceType | null {
+  if (!Number.isFinite(lowestMidi) || !Number.isFinite(highestMidi)) return null;
+  const span = highestMidi - lowestMidi;
+  if (!Number.isFinite(span) || span < MIN_SEMITONE_SPAN || span > MAX_SEMITONE_SPAN) return null;
 
-  const midpoint = (input.lowestMidi + input.highestMidi) / 2;
+  const midpoint = (lowestMidi + highestMidi) / 2;
   let bestMatch: VoiceType | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
@@ -46,6 +70,16 @@ export function classifyVoiceType(input: VoiceTypeClassificationInput): VoiceTyp
   }
 
   return bestMatch;
+}
+
+/**
+ * Classify a range gathered incidentally over a practice session, where the
+ * singer was not deliberately probing their limits. Requires enough distinct
+ * stable notes to trust that the extremes are real rather than stray frames.
+ */
+export function classifyVoiceType(input: VoiceTypeClassificationInput): VoiceType | null {
+  if (input.stableNoteCount < MIN_STABLE_NOTES) return null;
+  return voiceTypeForRange(input.lowestMidi, input.highestMidi);
 }
 
 export function getVoiceTypeById(id: string | null): VoiceType | null {

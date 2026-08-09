@@ -1,0 +1,112 @@
+.settings-screen {
+  padding: var(--space-6);
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.settings-screen__header h1 {
+  font-size: var(--text-xl);
+}
+
+.settings-section h2 {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-1);
+}
+.settings-hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+.settings-field select {
+  flex: 1;
+  max-width: 340px;
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-regular);
+}
+
+.settings-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+/* ── Advanced disclosure ── */
+.settings-advanced summary {
+  cursor: pointer;
+  font-size: var(--text-md);
+  font-weight: var(--font-semibold);
+  list-style: none;
+}
+.settings-advanced summary::-webkit-details-marker {
+  display: none;
+}
+.settings-advanced summary::after {
+  content: ' +';
+  color: var(--color-text-muted);
+}
+.settings-advanced[open] summary::after {
+  content: ' –';
+}
+.settings-advanced__body {
+  margin-top: var(--space-4);
+}
+
+.settings-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+.settings-facts dt {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+.settings-facts dd {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+}
+
+.settings-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+}
+.settings-note--warn {
+  color: #a06400;
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid var(--color-warn);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.settings-divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-5) 0;
+}
+
+.settings-danger {
+  color: var(--color-bad);
+}
+.settings-danger:hover {
+  background: rgba(239, 68, 68, 0.08);
+}

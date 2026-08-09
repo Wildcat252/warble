@@ -1,395 +1,164 @@
+/**
+ * Microphone level test.
+ *
+ * Scope is deliberately narrow: show the user that their mic is picking up
+ * sound, and how loud. Everything else this modal used to carry — mic device
+ * picker, latency compensation, octave compensation, voice type — was either
+ * duplicated by the Settings screen or written to storage that nothing ever
+ * read, so it was removed rather than left as controls that appear to do
+ * something.
+ *
+ * Note this measures the BROWSER's microphone via getUserMedia. Actual pitch
+ * detection happens backend-side (Python/sounddevice) on the device chosen in
+ * Settings, so this is an indicative check that audio reaches the machine —
+ * not a test of the exact capture path.
+ *
+ * Permission is requested only when the user presses Start, never on open:
+ * auto-requesting meant simply opening the modal could raise a permission
+ * error the user hadn't asked for.
+ */
 import { type Feature } from '../../feature-types';
-import {
-  loadPreflightDeviceId,
-  loadPreflightLatencyMs,
-  loadOctaveCompensationEnabled,
-  loadUserVoiceTypeId,
-  markAudioPreflightComplete,
-  persistOctaveCompensationEnabled,
-  persistPreflightDeviceId,
-  persistPreflightLatencyMs,
-  persistUserVoiceTypeId,
-  registerAudioPreflightOpener,
-} from '../../services/audio-preflight';
-import { VOICE_TYPES, getVoiceTypeById } from '../../pitch/voice-type';
-
-interface BrowserAudioInputDevice {
-  deviceId: string;
-  label: string;
-}
+import { registerAudioPreflightOpener } from '../../services/audio-preflight';
 
 let modalEl: HTMLDivElement | null = null;
 let resolver: ((value: boolean) => void) | null = null;
+
 let monitorCtx: AudioContext | null = null;
 let monitorStream: MediaStream | null = null;
 let analyser: AnalyserNode | null = null;
+let monitorSource: MediaStreamAudioSourceNode | null = null;
 let meterRaf: number | null = null;
 let meterRunToken = 0;
-let monitorSource: MediaStreamAudioSourceNode | null = null;
-let monitorGain: GainNode | null = null;
+let isMonitoring = false;
+let sessionPeak = 0;
 
 let meterFillEl: HTMLDivElement | null = null;
-let meterPeakLabelEl: HTMLSpanElement | null = null;
-let testResultEl: HTMLDivElement | null = null;
-let permissionStatusEl: HTMLDivElement | null = null;
-let deviceSelectEl: HTMLSelectElement | null = null;
-let latencyValueEl: HTMLSpanElement | null = null;
-let errorEl: HTMLDivElement | null = null;
+let resultEl: HTMLDivElement | null = null;
 let testButtonEl: HTMLButtonElement | null = null;
-let continueButtonEl: HTMLButtonElement | null = null;
-let requestButtonEl: HTMLButtonElement | null = null;
-let voiceTypeSelectEl: HTMLSelectElement | null = null;
-let voiceTypeSuggestionEl: HTMLDivElement | null = null;
-let octaveCompCheckboxEl: HTMLInputElement | null = null;
-const METER_GAIN_SCALE = 140;
-// Below ~1.5% peak amplitude we treat the run as silence / no usable mic signal.
-const NO_SIGNAL_THRESHOLD = 0.015;
-// Between ~1.5% and 8% there is signal, but it is likely too quiet for reliable tracking.
-const TOO_QUIET_THRESHOLD = 0.08;
-// Above ~75% peak amplitude the input is likely too hot and close to clipping.
-const TOO_LOUD_THRESHOLD = 0.75;
-
-type MicTestClassification = 'idle' | 'no-signal' | 'too-quiet' | 'good' | 'too-loud';
-
-interface MicTestSummary {
-  peakAmplitude: number;
-  peakDbfs: number | null;
-  classification: MicTestClassification;
-  message: string;
-}
 let removeEscapeListener: (() => void) | null = null;
 
-let selectedDeviceId: string | null = loadPreflightDeviceId();
-let selectedVoiceTypeId: string | null = loadUserVoiceTypeId();
-let isMonitoring = false;
+/** Scales the 0-1 peak into a meter width that reads well for speech/singing. */
+const METER_GAIN_SCALE = 140;
+// Below ~1.5% peak amplitude, treat the run as silence / no usable signal.
+const NO_SIGNAL_THRESHOLD = 0.015;
+// Between ~1.5% and 8% there is signal, but likely too quiet to track reliably.
+const TOO_QUIET_THRESHOLD = 0.08;
+// Above ~75% the input is close to clipping.
+const TOO_LOUD_THRESHOLD = 0.75;
 
-
-let activeMicTestPeakAmplitude: number | null = null;
+type Verdict = 'idle' | 'listening' | 'no-signal' | 'too-quiet' | 'good' | 'too-loud';
 
 function amplitudeToDbfs(amplitude: number): number | null {
-  if (amplitude <= 0) return null;
-  return 20 * Math.log10(amplitude);
+  return amplitude <= 0 ? null : 20 * Math.log10(amplitude);
 }
 
 function formatDbfs(dbfs: number | null): string {
-  return dbfs === null ? '—∞ dBFS' : `${dbfs.toFixed(1)} dBFS`;
+  return dbfs === null ? '—' : `${dbfs.toFixed(1)} dBFS`;
 }
 
-function classifyMicTestPeak(peakAmplitude: number): MicTestSummary {
-  const peakDbfs = amplitudeToDbfs(peakAmplitude);
-
-  if (peakAmplitude < NO_SIGNAL_THRESHOLD) {
-    return {
-      peakAmplitude,
-      peakDbfs,
-      classification: 'no-signal',
-      message: '✗ No signal detected — check your microphone selection, mute switch, or permissions.',
-    };
+export function classifyPeak(peak: number): { verdict: Verdict; message: string } {
+  const level = `peak ${formatDbfs(amplitudeToDbfs(peak))}`;
+  if (peak < NO_SIGNAL_THRESHOLD) {
+    return { verdict: 'no-signal', message: 'No sound detected. Check that the right microphone is selected in Settings and that it isn\'t muted.' };
   }
-
-  if (peakAmplitude < TOO_QUIET_THRESHOLD) {
-    return {
-      peakAmplitude,
-      peakDbfs,
-      classification: 'too-quiet',
-      message: `⚠️ Signal too quiet — peak ${formatDbfs(peakDbfs)}. Try moving closer to the mic or increasing input gain.`,
-    };
+  if (peak < TOO_QUIET_THRESHOLD) {
+    return { verdict: 'too-quiet', message: `Quite quiet (${level}). Try moving closer or raising your input gain.` };
   }
-
-  if (peakAmplitude > TOO_LOUD_THRESHOLD) {
-    return {
-      peakAmplitude,
-      peakDbfs,
-      classification: 'too-loud',
-      message: `⚠️ Signal too loud — peak ${formatDbfs(peakDbfs)}. Reduce input gain or move back slightly to avoid clipping.`,
-    };
+  if (peak > TOO_LOUD_THRESHOLD) {
+    return { verdict: 'too-loud', message: `Very loud (${level}) and close to clipping. Move back slightly or lower your input gain.` };
   }
-
-  return {
-    peakAmplitude,
-    peakDbfs,
-    classification: 'good',
-    message: `✓ Microphone detected — peak ${formatDbfs(peakDbfs)}. Level looks good for rehearsal.`,
-  };
+  return { verdict: 'good', message: `Sounds good (${level}).` };
 }
 
-function updateMicTestUi(summary: MicTestSummary): void {
-  if (meterPeakLabelEl) meterPeakLabelEl.textContent = `Peak: ${formatDbfs(summary.peakDbfs)}`;
-  if (!testResultEl) return;
-  testResultEl.dataset.state = summary.classification;
-  testResultEl.textContent = summary.message;
+function setResult(verdict: Verdict, message: string): void {
+  if (!resultEl) return;
+  resultEl.dataset.state = verdict;
+  resultEl.textContent = message;
 }
 
-function beginMicTestSession(): void {
-  activeMicTestPeakAmplitude = 0;
-  updateMicTestUi({
-    peakAmplitude: 0,
-    peakDbfs: null,
-    classification: 'idle',
-    message: 'Listening… speak into your mic, then stop the test to see the result.',
-  });
-}
-
-function finishMicTestSession(): void {
-  const summary = classifyMicTestPeak(activeMicTestPeakAmplitude ?? 0);
-  activeMicTestPeakAmplitude = null;
-  updateMicTestUi(summary);
-}
-
-function resetMicTestUi(): void {
-  activeMicTestPeakAmplitude = null;
-  if (meterPeakLabelEl) meterPeakLabelEl.textContent = 'Peak: —∞ dBFS';
-  if (!testResultEl) return;
-  testResultEl.dataset.state = 'idle';
-  testResultEl.textContent = 'Run “Test my mic” and speak to see a pass/fail result and level guidance.';
-}
-
-
-function applyVoiceTypeSuggestionFromEvent(event: Event): void {
-  const custom = event as CustomEvent<{ suggestedVoiceTypeId: string; message: string }>;
-  const suggestedVoiceType = getVoiceTypeById(custom.detail.suggestedVoiceTypeId);
-  if (!voiceTypeSuggestionEl || !suggestedVoiceType) return;
-  voiceTypeSuggestionEl.textContent = custom.detail.message;
-
-  if (!selectedVoiceTypeId) {
-    selectedVoiceTypeId = suggestedVoiceType.id;
-    persistUserVoiceTypeId(selectedVoiceTypeId);
-    if (voiceTypeSelectEl) voiceTypeSelectEl.value = selectedVoiceTypeId;
-  }
-
-  if (suggestedVoiceType.male && octaveCompCheckboxEl && !loadOctaveCompensationEnabled()) {
-    octaveCompCheckboxEl.checked = true;
-    persistOctaveCompensationEnabled(true);
-  }
-}
-
-function setError(message: string): void {
-  if (errorEl) errorEl.textContent = message;
-}
-
-function setPermissionStatus(message: string): void {
-  if (permissionStatusEl) permissionStatusEl.textContent = message;
-}
-
-function setRequestButtonVisibility(shouldShow: boolean): void {
-  if (!requestButtonEl) return;
-  requestButtonEl.style.display = shouldShow ? '' : 'none';
-}
-
-type MicrophonePermissionState = PermissionState | 'unsupported';
-
-async function getMicrophonePermissionState(): Promise<MicrophonePermissionState> {
-  if (!navigator.permissions?.query) return 'unsupported';
-
-  try {
-    const status = await navigator.permissions.query({
-      // `microphone` is supported in modern browsers but not yet in TS libdom.
-      name: 'microphone' as PermissionName,
-    });
-    return status.state;
-  } catch {
-    return 'unsupported';
-  }
-}
-
-async function syncPermissionUiFromBrowserState(): Promise<void> {
-  const permissionState = await getMicrophonePermissionState();
-  if (permissionState === 'granted') {
-    setPermissionStatus('Microphone permission granted.');
-    setRequestButtonVisibility(false);
-    if (continueButtonEl) continueButtonEl.disabled = false;
-    return;
-  }
-
-  if (permissionState === 'denied') {
-    setPermissionStatus('Microphone permission denied or unavailable.');
-    setRequestButtonVisibility(true);
-    if (continueButtonEl) continueButtonEl.disabled = true;
-    return;
-  }
-
-  setRequestButtonVisibility(true);
-}
-
-function cleanupMonitor(): void {
+function stopMonitoring(): void {
   meterRunToken += 1;
   if (meterRaf !== null) {
     cancelAnimationFrame(meterRaf);
     meterRaf = null;
   }
-
-  try {
-    monitorGain?.disconnect();
-  } catch {
-    // No-op: some Web Audio implementations throw if already disconnected.
-  }
   try {
     monitorSource?.disconnect();
   } catch {
-    // No-op: some Web Audio implementations throw if already disconnected.
+    // Some Web Audio implementations throw if already disconnected.
   }
-
-  monitorStream?.getTracks().forEach((track) => track.stop());
+  monitorStream?.getTracks().forEach((t) => t.stop());
   monitorStream = null;
-
   analyser = null;
   monitorSource = null;
-  monitorGain = null;
   if (monitorCtx) {
     void monitorCtx.close().catch(() => undefined);
     monitorCtx = null;
   }
   isMonitoring = false;
-
   if (meterFillEl) meterFillEl.style.width = '0%';
-  if (testButtonEl) testButtonEl.textContent = 'Test my mic';
+  if (testButtonEl) testButtonEl.textContent = 'Start test';
 }
 
-async function loadInputDevices(): Promise<BrowserAudioInputDevice[]> {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const inputs = devices.filter((d) => d.kind === 'audioinput');
-  return inputs.map((d, index) => ({
-    deviceId: d.deviceId,
-    label: d.label || `Microphone ${index + 1}`,
-  }));
-}
-
-
-function resolveSelectedDeviceId(
-  devices: BrowserAudioInputDevice[],
-  currentSelectedDeviceId: string | null,
-): string | null {
-  if (devices.length === 0) return null;
-  const hasSelected = currentSelectedDeviceId
-    ? devices.some((d) => d.deviceId === currentSelectedDeviceId)
-    : false;
-  return hasSelected ? currentSelectedDeviceId : devices[0].deviceId;
-}
-
-function startLevelMeter(): void {
+function runMeter(): void {
   if (!analyser || !meterFillEl) return;
   const data = new Uint8Array(analyser.fftSize);
   const runToken = meterRunToken;
 
   const tick = (): void => {
-    if (runToken !== meterRunToken) return;
-    if (!analyser || !meterFillEl) return;
+    if (runToken !== meterRunToken || !analyser || !meterFillEl) return;
     analyser.getByteTimeDomainData(data);
     let peak = 0;
     for (let i = 0; i < data.length; i += 1) {
-      const centered = (data[i] - 128) / 128;
-      const mag = Math.abs(centered);
+      const mag = Math.abs((data[i] - 128) / 128);
       if (mag > peak) peak = mag;
     }
-    if (isMonitoring && activeMicTestPeakAmplitude !== null) {
-      activeMicTestPeakAmplitude = Math.max(activeMicTestPeakAmplitude, peak);
-      if (meterPeakLabelEl) {
-        meterPeakLabelEl.textContent = `Peak: ${formatDbfs(amplitudeToDbfs(activeMicTestPeakAmplitude))}`;
-      }
-    }
+    sessionPeak = Math.max(sessionPeak, peak);
     meterFillEl.style.width = `${Math.min(100, Math.round(peak * METER_GAIN_SCALE))}%`;
     meterRaf = requestAnimationFrame(tick);
   };
-
   meterRaf = requestAnimationFrame(tick);
 }
 
-async function ensureMonitorStream(): Promise<void> {
-  // Always clean up first; cleanupMonitor() closes and nulls monitorCtx.
-  cleanupMonitor();
+async function startMonitoring(): Promise<void> {
+  stopMonitoring();
+  sessionPeak = 0;
 
-  const constraints: MediaStreamConstraints = {
-    audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true,
-    video: false,
-  };
-
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  monitorStream = stream;
-  if (!selectedDeviceId) {
-    const [track] = stream.getAudioTracks();
-    const settings = track?.getSettings();
-    selectedDeviceId = settings?.deviceId ?? selectedDeviceId;
-    persistPreflightDeviceId(selectedDeviceId);
-  }
-
-  const ctx = new AudioContext();
-  if (ctx.state === 'suspended') {
-    await ctx.resume();
-  }
-  monitorCtx = ctx;
-  monitorSource = ctx.createMediaStreamSource(stream);
-  analyser = ctx.createAnalyser();
-  analyser.fftSize = 1024;
-
-  monitorSource.connect(analyser);
-  startLevelMeter();
-}
-
-async function requestPermissionAndDevices(): Promise<void> {
-  setError('');
+  let stream: MediaStream;
   try {
-    await ensureMonitorStream();
-    const devices = await loadInputDevices();
-    if (!deviceSelectEl) return;
-    deviceSelectEl.innerHTML = devices
-      .map((d) => `<option value="${d.deviceId}">${d.label}</option>`)
-      .join('');
-
-    const resolvedDeviceId = resolveSelectedDeviceId(devices, selectedDeviceId);
-    if (resolvedDeviceId !== selectedDeviceId) {
-      selectedDeviceId = resolvedDeviceId;
-      persistPreflightDeviceId(selectedDeviceId);
-    }
-    if (selectedDeviceId) {
-      deviceSelectEl.value = selectedDeviceId;
-    }
-
-    setPermissionStatus('Microphone permission granted.');
-    setRequestButtonVisibility(false);
-    if (continueButtonEl) continueButtonEl.disabled = false;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    setPermissionStatus('Microphone permission denied or unavailable.');
-    setRequestButtonVisibility(true);
-    setError(`Could not access microphone: ${msg}`);
-    cleanupMonitor();
-    if (continueButtonEl) continueButtonEl.disabled = true;
+    // No deviceId constraint: the browser's default input is enough for an
+    // indicative level check, and requesting a specific one here would imply
+    // this picks the capture device (Settings does, backend-side).
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    const denied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    setResult('no-signal', denied
+      ? 'Microphone access was blocked. Allow it for this app in your browser or system settings, then try again.'
+      : `Couldn't open the microphone: ${String(err)}`);
+    return;
   }
+
+  monitorStream = stream;
+  monitorCtx = new AudioContext();
+  monitorSource = monitorCtx.createMediaStreamSource(stream);
+  analyser = monitorCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  // Analyser only — never routed to destination, so the mic is not echoed
+  // back through the speakers (which would feed straight back into it).
+  monitorSource.connect(analyser);
+
+  isMonitoring = true;
+  if (testButtonEl) testButtonEl.textContent = 'Stop test';
+  setResult('listening', 'Listening… speak or sing, then stop the test.');
+  runMeter();
 }
 
-async function toggleMicTest(): Promise<void> {
-  if (!monitorCtx || !analyser || !monitorSource) {
-    try {
-      await requestPermissionAndDevices();
-    } catch {
-      isMonitoring = false;
-      if (testButtonEl) testButtonEl.textContent = 'Test my mic';
-      return;
-    }
-    if (!monitorCtx || !analyser || !monitorSource) return;
-  }
-
-  if (!monitorGain) {
-    monitorGain = monitorCtx.createGain();
-    monitorGain.gain.value = 0;
-    monitorSource.connect(monitorGain);
-    monitorGain.connect(monitorCtx.destination);
-  }
-
-  const nextMonitoringState = !isMonitoring;
-  if (nextMonitoringState) {
-    beginMicTestSession();
-  }
-
-  isMonitoring = nextMonitoringState;
-  monitorGain.gain.value = isMonitoring ? 0.7 : 0;
-  if (testButtonEl) testButtonEl.textContent = isMonitoring ? 'Stop mic test' : 'Test my mic';
-
-  if (!isMonitoring) {
-    finishMicTestSession();
-  }
+function finishTest(): void {
+  const peak = sessionPeak;
+  stopMonitoring();
+  const { verdict, message } = classifyPeak(peak);
+  setResult(verdict, message);
 }
-
 
 function buildModal(): HTMLDivElement {
   const wrapper = document.createElement('div');
@@ -398,49 +167,26 @@ function buildModal(): HTMLDivElement {
   wrapper.innerHTML = `
     <div class="audio-preflight-backdrop"></div>
     <div class="audio-preflight-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-preflight-title">
-      <button id="audio-preflight-close" class="audio-preflight-close" aria-label="Close audio setup">✕</button>
-      <h2 id="audio-preflight-title">Audio setup</h2>
-      <p class="audio-preflight-help">Before rehearsal, confirm your mic and latency setup.</p>
-      <div id="audio-preflight-permission" class="audio-preflight-status">Microphone permission not requested yet.</div>
-      <div class="audio-preflight-row">
-        <label for="audio-preflight-device">Microphone</label>
-        <select id="audio-preflight-device"></select>
+      <button id="audio-preflight-close" class="audio-preflight-close" aria-label="Close">Close</button>
+      <h2 id="audio-preflight-title">Test your microphone</h2>
+      <p class="audio-preflight-help">Start the test and make some sound — the bar should move.</p>
+
+      <div class="audio-meter"><div id="audio-preflight-meter-fill" class="audio-meter-fill"></div></div>
+
+      <div id="audio-preflight-result" class="audio-preflight-test-result" data-state="idle">
+        Press Start test, then speak or sing.
       </div>
-      <div class="audio-preflight-row">
-        <label>Input level</label>
-        <div>
-          <div class="audio-meter"><div id="audio-preflight-meter-fill" class="audio-meter-fill"></div></div>
-          <div id="audio-preflight-meter-peak" class="audio-meter-peak">Peak: —∞ dBFS</div>
-        </div>
+
+      <div class="audio-preflight-tip">
+        Use headphones so the sound you're matching doesn't leak into the mic.
       </div>
-      <div class="audio-preflight-row">
-        <label for="audio-preflight-latency">Latency compensation</label>
-        <div>
-          <input id="audio-preflight-latency" type="range" min="-250" max="500" step="10" />
-          <span id="audio-preflight-latency-value"></span>
-        </div>
-      </div>
-      <div class="audio-preflight-row">
-        <label for="audio-preflight-voice-type">Voice type</label>
-        <select id="audio-preflight-voice-type"></select>
-      </div>
-      <div id="audio-preflight-voice-suggestion" class="audio-preflight-status">Voice type suggestion: complete one session to get a recommendation.</div>
-      <div class="audio-preflight-row">
-        <label for="audio-preflight-octave-comp">Octave compensation</label>
-        <input id="audio-preflight-octave-comp" type="checkbox" />
-      </div>
-      <div id="audio-preflight-test-result" class="audio-preflight-test-result" data-state="idle">Run “Test my mic” and speak to see a pass/fail result and level guidance.</div>
-      <div class="audio-preflight-tip">🎧 Use headphones to avoid feedback and mic bleed.</div>
-      <div id="audio-preflight-error" class="audio-preflight-error" role="alert"></div>
+
       <div class="audio-preflight-actions">
-        <button id="audio-preflight-cancel" class="transport-btn">Cancel</button>
-        <button id="audio-preflight-request" class="transport-btn">Allow microphone</button>
-        <button id="audio-preflight-test" class="transport-btn">Test my mic</button>
-        <button id="audio-preflight-continue" class="transport-btn" disabled>Start rehearsal</button>
+        <button id="audio-preflight-test" class="btn btn-primary">Start test</button>
+        <button id="audio-preflight-done" class="btn btn-secondary">Done</button>
       </div>
     </div>
   `;
-
   return wrapper;
 }
 
@@ -450,63 +196,86 @@ function ensureStyles(): void {
   style.id = 'audio-preflight-style';
   style.textContent = `
     .audio-preflight.hidden { display: none; }
-    .audio-preflight { position: fixed; inset: 0; z-index: 3000; }
-    .audio-preflight-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55); }
+    .audio-preflight {
+      position: fixed; inset: 0; z-index: 3000;
+      display: flex; align-items: center; justify-content: center;
+      padding: var(--space-5);
+    }
+    .audio-preflight-backdrop { position: absolute; inset: 0; background: rgba(43, 36, 56, 0.45); }
     .audio-preflight-dialog {
       position: relative;
-      margin: 8vh auto;
-      max-width: 560px;
-      background: #101726;
-      color: #eaf6ff;
-      border: 1px solid #2f5f88;
-      border-radius: 10px;
-      padding: 16px;
-      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.35);
+      width: min(460px, 100%);
+      background: var(--color-surface);
+      color: var(--color-text);
+      border-radius: var(--radius-xl);
+      padding: var(--space-6);
+      box-shadow: var(--shadow-lg);
     }
-    .audio-preflight-help { margin-top: 0; color: #b9d8ef; }
+    .audio-preflight-dialog h2 { font-size: var(--text-lg); margin-bottom: var(--space-2); }
+    .audio-preflight-help { color: var(--color-text-muted); font-size: var(--text-sm); margin-bottom: var(--space-5); }
     .audio-preflight-close {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      border: 1px solid #2f5f88;
-      border-radius: 6px;
-      background: transparent;
-      color: #eaf6ff;
-      font-size: 1rem;
-      line-height: 1;
-      padding: 4px 8px;
-      cursor: pointer;
+      position: absolute; top: var(--space-3); right: var(--space-3);
+      border: none; border-radius: var(--radius-full);
+      background: var(--color-surface-alt); color: var(--color-text-muted);
+      padding: var(--space-1) var(--space-3);
+      font-size: var(--text-xs); cursor: pointer;
     }
-    .audio-preflight-close:hover { background: rgba(255, 255, 255, 0.1); }
-    .audio-preflight-row { display: grid; grid-template-columns: 170px 1fr; gap: 10px; align-items: center; margin: 10px 0; }
-    .audio-meter { height: 12px; border-radius: 10px; border: 1px solid #1a5276; background: #111; overflow: hidden; }
-    .audio-meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #2ecc71, #f1c40f, #e74c3c); transition: width 60ms linear; }
-    .audio-meter-peak { margin-top: 6px; font-size: 0.9rem; color: #b9d8ef; }
-    .audio-preflight-tip, .audio-preflight-status, .audio-preflight-test-result { background: #15293f; border: 1px solid #254f75; border-radius: 6px; padding: 8px; margin: 10px 0; }
-    .audio-preflight-test-result[data-state="good"] { border-color: #2ecc71; color: #b8f7cc; }
-    .audio-preflight-test-result[data-state="too-quiet"], .audio-preflight-test-result[data-state="too-loud"] { border-color: #f1c40f; color: #ffe7a0; }
-    .audio-preflight-test-result[data-state="no-signal"] { border-color: #e74c3c; color: #ffb0a8; }
-    .audio-preflight-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .audio-preflight-error { min-height: 1.2em; color: #ff8e8e; }
+    .audio-preflight-close:hover { background: var(--color-border); color: var(--color-text); }
+    .audio-meter {
+      height: 14px; border-radius: var(--radius-full);
+      border: 1px solid var(--color-border); background: var(--color-surface-alt);
+      overflow: hidden; margin-bottom: var(--space-4);
+    }
+    .audio-meter-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--color-good), var(--color-warn), var(--color-bad));
+      transition: width 60ms linear;
+    }
+    .audio-preflight-tip, .audio-preflight-test-result {
+      background: var(--color-surface-alt);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      font-size: var(--text-sm);
+    }
+    .audio-preflight-test-result[data-state="good"] { border-color: var(--color-good); background: rgba(52,211,153,0.12); color: #1a8a63; }
+    .audio-preflight-test-result[data-state="too-quiet"],
+    .audio-preflight-test-result[data-state="too-loud"] { border-color: var(--color-warn); background: rgba(255,176,32,0.12); color: #a06400; }
+    .audio-preflight-test-result[data-state="no-signal"] { border-color: var(--color-bad); background: rgba(239,68,68,0.12); color: #b91c1c; }
+    .audio-preflight-actions { display: flex; gap: var(--space-2); margin-top: var(--space-4); }
     @media (max-width: 640px) {
-      .audio-preflight-dialog { margin: 0; border-radius: 0; max-width: none; min-height: 100vh; }
-      .audio-preflight-row { grid-template-columns: 1fr; }
+      .audio-preflight-dialog { border-radius: 0; width: 100%; min-height: 100vh; }
     }
   `;
   document.head.appendChild(style);
 }
 
-async function openModal(): Promise<boolean> {
-  if (!modalEl) return false;
+function closeModal(completed: boolean): void {
+  stopMonitoring();
+  modalEl?.classList.add('hidden');
+  removeEscapeListener?.();
+  if (resolver) {
+    resolver(completed);
+    resolver = null;
+  }
+}
+
+function openModal(): Promise<boolean> {
+  if (!modalEl) return Promise.resolve(false);
   if (resolver) {
     resolver(false);
     resolver = null;
   }
-  resetMicTestUi();
+
+  sessionPeak = 0;
+  setResult('idle', 'Press Start test, then speak or sing.');
+  if (meterFillEl) meterFillEl.style.width = '0%';
   modalEl.classList.remove('hidden');
+
   removeEscapeListener?.();
   const onEscape = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || isPreflightModalHidden()) return;
+    if (event.key !== 'Escape' || modalEl?.classList.contains('hidden')) return;
     event.preventDefault();
     closeModal(false);
   };
@@ -515,25 +284,10 @@ async function openModal(): Promise<boolean> {
     window.removeEventListener('keydown', onEscape);
     removeEscapeListener = null;
   };
-  void syncPermissionUiFromBrowserState();
-  void requestPermissionAndDevices();
+
   return new Promise<boolean>((resolve) => {
     resolver = resolve;
   });
-}
-
-function closeModal(completed: boolean): void {
-  resetMicTestUi();
-  if (modalEl) modalEl.classList.add('hidden');
-  removeEscapeListener?.();
-  monitorGain && (monitorGain.gain.value = 0);
-  isMonitoring = false;
-  if (testButtonEl) testButtonEl.textContent = 'Test my mic';
-  if (completed) markAudioPreflightComplete();
-  if (resolver) {
-    resolver(completed);
-    resolver = null;
-  }
 }
 
 function mount(_slot: HTMLElement): void {
@@ -541,119 +295,34 @@ function mount(_slot: HTMLElement): void {
   modalEl = buildModal();
   document.body.appendChild(modalEl);
 
-  permissionStatusEl = document.getElementById('audio-preflight-permission') as HTMLDivElement;
-  deviceSelectEl = document.getElementById('audio-preflight-device') as HTMLSelectElement;
-  meterFillEl = document.getElementById('audio-preflight-meter-fill') as HTMLDivElement;
-  meterPeakLabelEl = document.getElementById('audio-preflight-meter-peak') as HTMLSpanElement;
-  testResultEl = document.getElementById('audio-preflight-test-result') as HTMLDivElement;
-  latencyValueEl = document.getElementById('audio-preflight-latency-value') as HTMLSpanElement;
-  errorEl = document.getElementById('audio-preflight-error') as HTMLDivElement;
-  testButtonEl = document.getElementById('audio-preflight-test') as HTMLButtonElement;
-  continueButtonEl = document.getElementById('audio-preflight-continue') as HTMLButtonElement;
-  voiceTypeSelectEl = document.getElementById('audio-preflight-voice-type') as HTMLSelectElement;
-  voiceTypeSuggestionEl = document.getElementById('audio-preflight-voice-suggestion') as HTMLDivElement;
-  octaveCompCheckboxEl = document.getElementById('audio-preflight-octave-comp') as HTMLInputElement;
+  meterFillEl = modalEl.querySelector('#audio-preflight-meter-fill');
+  resultEl = modalEl.querySelector('#audio-preflight-result');
+  testButtonEl = modalEl.querySelector('#audio-preflight-test');
 
-  requestButtonEl = document.getElementById('audio-preflight-request') as HTMLButtonElement;
-  resetMicTestUi();
-  const cancelButton = document.getElementById('audio-preflight-cancel') as HTMLButtonElement;
-  const closeButton = document.getElementById('audio-preflight-close') as HTMLButtonElement;
-  const backdrop = modalEl.querySelector('.audio-preflight-backdrop') as HTMLDivElement;
-  const latencyEl = document.getElementById('audio-preflight-latency') as HTMLInputElement;
+  modalEl.querySelector('#audio-preflight-close')?.addEventListener('click', () => closeModal(false));
+  modalEl.querySelector('.audio-preflight-backdrop')?.addEventListener('click', () => closeModal(false));
+  modalEl.querySelector('#audio-preflight-done')?.addEventListener('click', () => closeModal(true));
 
-  const latencyMs = loadPreflightLatencyMs();
-  latencyEl.value = String(latencyMs);
-  latencyValueEl.textContent = `${latencyMs} ms`;
-
-  voiceTypeSelectEl.innerHTML = [
-    '<option value="">Not set</option>',
-    ...VOICE_TYPES.map((type) => `<option value="${type.id}">${type.label}</option>`),
-  ].join('');
-  if (selectedVoiceTypeId) voiceTypeSelectEl.value = selectedVoiceTypeId;
-  octaveCompCheckboxEl.checked = loadOctaveCompensationEnabled();
-
-  requestButtonEl.addEventListener('click', () => {
-    void requestPermissionAndDevices();
-  });
-
-  void syncPermissionUiFromBrowserState();
-  cancelButton.addEventListener('click', () => {
-    closeModal(false);
-  });
-
-  closeButton.addEventListener('click', () => {
-    closeModal(false);
-  });
-
-  backdrop.addEventListener('click', () => {
-    closeModal(false);
-  });
-
-  deviceSelectEl.addEventListener('change', () => {
-    selectedDeviceId = deviceSelectEl?.value ?? null;
-    persistPreflightDeviceId(selectedDeviceId);
-    void requestPermissionAndDevices();
-  });
-
-  latencyEl.addEventListener('input', () => {
-    const value = Number.parseInt(latencyEl.value, 10);
-    persistPreflightLatencyMs(value);
-    if (latencyValueEl) latencyValueEl.textContent = `${value} ms`;
-  });
-
-  voiceTypeSelectEl.addEventListener('change', () => {
-    selectedVoiceTypeId = voiceTypeSelectEl?.value || null;
-    persistUserVoiceTypeId(selectedVoiceTypeId);
-  });
-
-  octaveCompCheckboxEl.addEventListener('change', () => {
-    persistOctaveCompensationEnabled(Boolean(octaveCompCheckboxEl?.checked));
-  });
-
-  testButtonEl.addEventListener('click', () => {
-    void toggleMicTest();
-  });
-
-  continueButtonEl.addEventListener('click', () => {
-    closeModal(true);
+  testButtonEl?.addEventListener('click', () => {
+    if (isMonitoring) finishTest();
+    else void startMonitoring();
   });
 
   registerAudioPreflightOpener(openModal);
-  window.addEventListener('voice-type-suggested', applyVoiceTypeSuggestionFromEvent as EventListener);
 }
 
 function unmount(): void {
-  cleanupMonitor();
-  resetMicTestUi();
+  stopMonitoring();
   removeEscapeListener?.();
   if (resolver) {
     resolver(false);
     resolver = null;
   }
-  // monitorCtx is already closed and nulled by cleanupMonitor()
   modalEl?.remove();
   modalEl = null;
-  window.removeEventListener('voice-type-suggested', applyVoiceTypeSuggestionFromEvent as EventListener);
-}
-
-export const __audioPreflightInternals = {
-  amplitudeToDbfs,
-  classifyMicTestPeak,
-  resolveSelectedDeviceId,
-  isPreflightModalHidden,
-  openModal,
-  closeModal,
-  setRequestButtonVisibility,
-  getMicrophonePermissionState,
-  syncPermissionUiFromBrowserState,
-  beginMicTestSession,
-  finishMicTestSession,
-  resetMicTestUi,
-  updateMicTestUi,
-};
-
-function isPreflightModalHidden(): boolean {
-  return !modalEl || modalEl.classList.contains('hidden');
+  meterFillEl = null;
+  resultEl = null;
+  testButtonEl = null;
 }
 
 export const audioPreflightFeature: Feature = {
