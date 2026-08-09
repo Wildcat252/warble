@@ -37,6 +37,7 @@ import { recordPracticeEntry } from '../../gamification/practice-log';
 import { computeXp } from '../../gamification/xp';
 import { getAudioContext } from '../../services/audio-context';
 import { loadUserVoiceTypeId } from '../../services/audio-preflight';
+import { loadBackendDeviceId } from '../../services/audio-device';
 import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';
 import './exercise-player.css';
@@ -88,24 +89,17 @@ function resetState(): void {
 }
 
 /**
- * Always null — /playback/start's device_id must be a `sounddevice`
- * (PortAudio) integer index, from the backend's own /audio/devices list.
- * services/audio-preflight.ts's stored device id is a BROWSER
- * `navigator.mediaDevices` deviceId (an opaque hash string, used for the
- * preflight modal's own getUserMedia level-meter check) — a completely
- * different numbering scheme. An earlier version of this function
- * `parseInt()`'d that hash string, which for many devices "succeeds" with
- * a small-looking number that isn't a real backend device index, and the
- * backend would crash opening the wrong device
- * (sounddevice.PortAudioError, PaErrorCode -9986).
- * `null` here means "use the backend's own default input device," which
- * is what most users want anyway. Phase 8 (Settings screen) is where a
- * real backend-device-list-driven picker belongs, fed by /audio/devices
- * like the old features/pitch-overlay settings panel did — not this
- * shortcut.
+ * Backend PortAudio device index chosen in Settings, or null to let the
+ * backend use its own default input.
+ *
+ * Deliberately NOT services/audio-preflight.ts's stored device id — that is
+ * a browser `navigator.mediaDevices` hash string for the preflight level
+ * meter, a different namespace entirely. Passing it here previously crashed
+ * the backend opening a nonexistent device (PortAudioError -9986). See
+ * services/audio-device.ts.
  */
 function resolveDeviceId(): number | null {
-  return null;
+  return loadBackendDeviceId();
 }
 
 function resolveAnchorMidi(): number {

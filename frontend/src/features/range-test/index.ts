@@ -25,6 +25,7 @@ import { SessionRangeTracker } from '../../pitch/session-range';
 import { classifyVoiceType } from '../../pitch/voice-type';
 import { persistUserVoiceTypeId } from '../../services/audio-preflight';
 import { recordPracticeEntry } from '../../gamification/practice-log';
+import { loadBackendDeviceId } from '../../services/audio-device';
 import { PitchConnection } from '../../pitch/pitch-connection';
 import type { PitchFrame } from '../../pitch/socket';
 import { MIN_CONFIDENCE_FOR_DOT } from '../../pitch/accuracy';
@@ -257,7 +258,8 @@ async function beginCapture(): Promise<void> {
     if (ctx.state === 'suspended') {
       await ctx.resume();
     }
-    await startPlayback(null);
+    // Backend PortAudio device index from Settings (null = backend default).
+    await startPlayback(loadBackendDeviceId());
     playbackStarted = true;
   } catch (err) {
     setAppStatus('range test start failed', 'error');
