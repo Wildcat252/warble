@@ -39,7 +39,6 @@ import { getAudioContext } from '../../services/audio-context';
 import { loadUserVoiceTypeId } from '../../services/audio-preflight';
 import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';
-import '../../screens/placeholder.css'; // shares .screen-placeholder/.card for the not-found state
 import './exercise-player.css';
 
 interface Els {
@@ -122,7 +121,7 @@ function targetIndexAt(elapsedMs: number): number | null {
 
 function renderNotFound(container: HTMLElement): void {
   container.innerHTML = `
-    <div class="screen-placeholder">
+    <div class="exercise-notfound">
       <div class="card">
         <h1>Exercise not found</h1>
         <p>Go back and pick an exercise to start.</p>

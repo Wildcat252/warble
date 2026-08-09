@@ -98,14 +98,25 @@ function isEntry(value: unknown): value is PracticeEntry {
   );
 }
 
-/** Newest first. */
+/**
+ * Newest first, sorted by TIMESTAMP rather than insertion order.
+ *
+ * Writes prepend, so insertion order usually matches chronological order —
+ * but only because you can't normally complete an exercise in the past.
+ * Anything that imports, backfills, or writes out of order (and any consumer
+ * that slices "the N most recent") would silently get a wrong answer from
+ * insertion order alone. Sorting here makes the documented contract real for
+ * every caller instead of each one having to re-sort defensively.
+ */
 export function loadPracticeLog(): PracticeEntry[] {
   const raw = getStoredRaw();
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isEntry);
+    return parsed
+      .filter(isEntry)
+      .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
   } catch {
     return [];
   }

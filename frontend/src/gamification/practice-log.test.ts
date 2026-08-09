@@ -37,10 +37,19 @@ describe('practice log persistence', () => {
     expect(loaded).toEqual(saved);
   });
 
-  it('stores newest first', () => {
-    recordPracticeEntry(entry({ exerciseId: 'older' }));
-    recordPracticeEntry(entry({ exerciseId: 'newer' }));
+  it('returns newest first', () => {
+    recordPracticeEntry(entry({ exerciseId: 'older', timestamp: new Date(2026, 7, 1).toISOString() }));
+    recordPracticeEntry(entry({ exerciseId: 'newer', timestamp: new Date(2026, 7, 2).toISOString() }));
     expect(loadPracticeLog().map((e) => e.exerciseId)).toEqual(['newer', 'older']);
+  });
+
+  it('orders by timestamp, not insertion order', () => {
+    // Writing out of chronological order (backfill/import) must still read
+    // back newest-first, or anything slicing "the N most recent" is wrong.
+    recordPracticeEntry(entry({ exerciseId: 'middle', timestamp: new Date(2026, 7, 5).toISOString() }));
+    recordPracticeEntry(entry({ exerciseId: 'oldest', timestamp: new Date(2026, 7, 1).toISOString() }));
+    recordPracticeEntry(entry({ exerciseId: 'newest', timestamp: new Date(2026, 7, 9).toISOString() }));
+    expect(loadPracticeLog().map((e) => e.exerciseId)).toEqual(['newest', 'middle', 'oldest']);
   });
 
   it('ignores malformed stored data rather than throwing', () => {
