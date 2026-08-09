@@ -15,15 +15,14 @@ import './app-shell.css';
 interface NavItem {
   screen: ScreenId;
   label: string;
-  icon: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { screen: 'home', label: 'Home', icon: '🏠' },
-  { screen: 'exercise-picker', label: 'Exercises', icon: '🎯' },
-  { screen: 'range-test', label: 'Range Test', icon: '🎚️' },
-  { screen: 'progress', label: 'Progress', icon: '📈' },
-  { screen: 'settings', label: 'Settings', icon: '⚙️' },
+  { screen: 'home', label: 'Home' },
+  { screen: 'exercise-picker', label: 'Exercises' },
+  { screen: 'range-test', label: 'Range Test' },
+  { screen: 'progress', label: 'Progress' },
+  { screen: 'settings', label: 'Settings' },
 ];
 
 let activeScreen: Screen | null = null;
@@ -34,7 +33,6 @@ function buildShellMarkup(): string {
   const navButtons = NAV_ITEMS.map(
     (item) => `
       <button type="button" class="app-nav__item" data-nav-target="${item.screen}" title="${item.label}">
-        <span class="app-nav__icon" aria-hidden="true">${item.icon}</span>
         <span class="app-nav__label">${item.label}</span>
       </button>
     `,
@@ -43,7 +41,7 @@ function buildShellMarkup(): string {
   return `
     <div id="app-shell">
       <header id="app-header">
-        <button type="button" id="app-back-btn" class="btn btn-ghost hidden" title="Back" aria-label="Back">&larr;</button>
+        <button type="button" id="app-back-btn" class="btn btn-ghost hidden" title="Back" aria-label="Back">Back</button>
         <span id="app-header-brand">${APP_NAME}</span>
         <div id="app-status" role="status" aria-live="polite" aria-atomic="true">
           <span id="app-status-text">checking backend…</span>

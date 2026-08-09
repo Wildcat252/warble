@@ -83,7 +83,7 @@ function classifyMicTestPeak(peakAmplitude: number): MicTestSummary {
       peakAmplitude,
       peakDbfs,
       classification: 'no-signal',
-      message: '✗ No signal detected — check your microphone selection, mute switch, or permissions.',
+      message: 'No signal detected — check your microphone selection, mute switch, or permissions.',
     };
   }
 
@@ -92,7 +92,7 @@ function classifyMicTestPeak(peakAmplitude: number): MicTestSummary {
       peakAmplitude,
       peakDbfs,
       classification: 'too-quiet',
-      message: `⚠️ Signal too quiet — peak ${formatDbfs(peakDbfs)}. Try moving closer to the mic or increasing input gain.`,
+      message: `Signal too quiet — peak ${formatDbfs(peakDbfs)}. Try moving closer to the mic or increasing input gain.`,
     };
   }
 
@@ -101,7 +101,7 @@ function classifyMicTestPeak(peakAmplitude: number): MicTestSummary {
       peakAmplitude,
       peakDbfs,
       classification: 'too-loud',
-      message: `⚠️ Signal too loud — peak ${formatDbfs(peakDbfs)}. Reduce input gain or move back slightly to avoid clipping.`,
+      message: `Signal too loud — peak ${formatDbfs(peakDbfs)}. Reduce input gain or move back slightly to avoid clipping.`,
     };
   }
 
@@ -109,7 +109,7 @@ function classifyMicTestPeak(peakAmplitude: number): MicTestSummary {
     peakAmplitude,
     peakDbfs,
     classification: 'good',
-    message: `✓ Microphone detected — peak ${formatDbfs(peakDbfs)}. Level looks good for rehearsal.`,
+    message: `Microphone detected — peak ${formatDbfs(peakDbfs)}. Level looks good for rehearsal.`,
   };
 }
 
@@ -398,7 +398,7 @@ function buildModal(): HTMLDivElement {
   wrapper.innerHTML = `
     <div class="audio-preflight-backdrop"></div>
     <div class="audio-preflight-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-preflight-title">
-      <button id="audio-preflight-close" class="audio-preflight-close" aria-label="Close audio setup">✕</button>
+      <button id="audio-preflight-close" class="audio-preflight-close" aria-label="Close audio setup">Close</button>
       <h2 id="audio-preflight-title">Audio setup</h2>
       <p class="audio-preflight-help">Before rehearsal, confirm your mic and latency setup.</p>
       <div id="audio-preflight-permission" class="audio-preflight-status">Microphone permission not requested yet.</div>
@@ -430,7 +430,7 @@ function buildModal(): HTMLDivElement {
         <input id="audio-preflight-octave-comp" type="checkbox" />
       </div>
       <div id="audio-preflight-test-result" class="audio-preflight-test-result" data-state="idle">Run “Test my mic” and speak to see a pass/fail result and level guidance.</div>
-      <div class="audio-preflight-tip">🎧 Use headphones to avoid feedback and mic bleed.</div>
+      <div class="audio-preflight-tip">Use headphones to avoid feedback and mic bleed.</div>
       <div id="audio-preflight-error" class="audio-preflight-error" role="alert"></div>
       <div class="audio-preflight-actions">
         <button id="audio-preflight-cancel" class="btn btn-ghost">Cancel</button>

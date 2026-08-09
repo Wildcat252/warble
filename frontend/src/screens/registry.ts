@@ -15,17 +15,14 @@ import { exercisePlayerScreen } from '../features/exercise-player/index';
 import { exercisePickerScreen } from './exercise-picker/index';
 import { settingsScreen } from './settings/index';
 import { rangeTestScreen } from '../features/range-test/index';
+import { resultsScreen } from './results/index';
 
 const screens: Record<ScreenId, Screen> = {
   home: homeScreen,
   'range-test': rangeTestScreen,
   'exercise-picker': exercisePickerScreen,
   'exercise-player': exercisePlayerScreen,
-  results: createPlaceholderScreen(
-    'results',
-    'Results',
-    'Coming in a later build phase — XP earned, accuracy, and streak updates after each exercise.',
-  ),
+  results: resultsScreen,
   progress: createPlaceholderScreen(
     'progress',
     'Progress',

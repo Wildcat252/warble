@@ -1,0 +1,91 @@
+.results-screen {
+  position: relative;
+  padding: var(--space-8) var(--space-6);
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* Confetti canvas sits behind the card, covering the screen area. */
+.results-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.results-card {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.results-eyebrow {
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-4);
+}
+
+.results-xp {
+  font-size: var(--text-3xl);
+  font-weight: var(--font-black);
+  line-height: 1;
+  background: var(--gradient-primary);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.results-xp-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+
+.results-levelup {
+  display: inline-block;
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--color-accent);
+  font-weight: var(--font-semibold);
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  margin-bottom: var(--space-5);
+}
+
+.results-stats {
+  display: flex;
+  justify-content: space-around;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.results-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.results-stat__value {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+}
+.results-stat__label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.results-progress {
+  margin-bottom: var(--space-6);
+}
+.results-progress__label {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.results-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+}

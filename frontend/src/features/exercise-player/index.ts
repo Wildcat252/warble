@@ -33,6 +33,8 @@ import { centsOffPitch, GREEN_CENTS_THRESHOLD, MIN_CONFIDENCE_FOR_DOT } from '..
 import { midiToFrequency, midiToNoteName } from '../../pitch/note-name';
 import { getVoiceTypeById } from '../../pitch/voice-type';
 import { TonePlayer } from '../../audio/tone-player';
+import { recordPracticeEntry } from '../../gamification/practice-log';
+import { computeXp } from '../../gamification/xp';
 import { getAudioContext } from '../../services/audio-context';
 import { loadUserVoiceTypeId } from '../../services/audio-preflight';
 import { startPlayback, postPlayback } from '../../transport/controls';
@@ -254,33 +256,34 @@ function handleFrame(frame: PitchFrame): void {
   }
 }
 
-function showSummary(): void {
-  if (!els) return;
-  els.status.textContent = 'Exercise complete!';
+/**
+ * Records the attempt to the practice log and hands off to the Results
+ * screen. The log entry is written BEFORE navigating so Results (and Home,
+ * and Progress) can all derive level/streak from the same committed source
+ * rather than from navigation params.
+ */
+function recordAndShowResults(): void {
+  if (!definition) return;
   const accuracyPct = computeAccuracyPct();
-  const rows = targets
-    .map((t, i) => {
-      const icon = perTargetResults[i]?.hit ? '✅' : '❌';
-      const label = t.label ? ` — ${t.label}` : '';
-      return `<li>${icon} ${midiToNoteName(t.midi)}${label}</li>`;
-    })
-    .join('');
 
-  els.summary.classList.remove('hidden');
-  els.summary.innerHTML = `
-    <div class="card pop-in exercise-summary">
-      <h2>Accuracy: ${accuracyPct}%</h2>
-      <ul class="exercise-summary__list">${rows}</ul>
-      <p class="exercise-summary__note">
-        This is a Phase 3 verification view — XP, streaks, and the real Results
-        screen land in a later build phase.
-      </p>
-      <button type="button" class="btn btn-primary" id="ex-done-btn">Done</button>
-    </div>
-  `;
-  els.summary.querySelector<HTMLButtonElement>('#ex-done-btn')?.addEventListener('click', () => {
-    navigate('home');
+  // Range sung during the attempt, for the Progress screen's range trend.
+  const achieved = perTargetResults
+    .filter((r): r is ExerciseTargetResult => Boolean(r))
+    .map((r) => r.achievedMidi)
+    .filter((m): m is number => m !== null);
+
+  const entry = recordPracticeEntry({
+    timestamp: new Date().toISOString(),
+    exerciseId: definition.id,
+    exerciseKind: definition.kind,
+    accuracyPct,
+    durationMs: Math.round(exerciseDurationMs(targets)),
+    xpEarned: computeXp(definition.xpBase, accuracyPct),
+    minMidi: achieved.length ? Math.min(...achieved) : null,
+    maxMidi: achieved.length ? Math.max(...achieved) : null,
   });
+
+  navigate('results', { entryId: entry.id });
 }
 
 function finishExercise(): void {
@@ -294,7 +297,7 @@ function finishExercise(): void {
   }
   connection?.close();
   if (playbackStarted) void postPlayback('/playback/stop').catch(() => {});
-  showSummary();
+  recordAndShowResults();
 }
 
 function tick(): void {

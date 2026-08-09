@@ -24,6 +24,7 @@ import { navigate, goBack } from '../../navigation/router';
 import { SessionRangeTracker } from '../../pitch/session-range';
 import { classifyVoiceType } from '../../pitch/voice-type';
 import { persistUserVoiceTypeId } from '../../services/audio-preflight';
+import { recordPracticeEntry } from '../../gamification/practice-log';
 import { PitchConnection } from '../../pitch/pitch-connection';
 import type { PitchFrame } from '../../pitch/socket';
 import { MIN_CONFIDENCE_FOR_DOT } from '../../pitch/accuracy';
@@ -81,7 +82,6 @@ function renderIntro(root: HTMLElement): void {
   root.innerHTML = `
     <div class="range-test range-test--intro fade-in">
       <div class="card range-test__card">
-        <span class="range-test__icon" aria-hidden="true">🎚️</span>
         <h1>Find your voice type</h1>
         <p>You'll glide down to your lowest comfortable note, then up to your highest. No need to strain — comfortable is better than extreme.</p>
         <button type="button" class="btn btn-primary" id="range-test-begin">Begin</button>
@@ -128,8 +128,8 @@ function renderReveal(root: HTMLElement): void {
     <div class="range-test range-test--reveal fade-in">
       <div class="card range-test__card">
         ${voiceType
-    ? `<span class="range-test__icon" aria-hidden="true">🎉</span><h1>You're a ${voiceType.label}!</h1>`
-    : `<span class="range-test__icon" aria-hidden="true">🎚️</span><h1>Here's your measured range</h1>`
+    ? `<h1>You're a ${voiceType.label}!</h1>`
+    : '<h1>Here\'s your measured range</h1>'
 }
         <p class="range-test__range-readout">${rangeText}</p>
         ${!voiceType && summary
@@ -212,11 +212,33 @@ function advanceStage(): void {
   }
 }
 
+/** Flat award — the range test isn't scored on accuracy, so XP can't scale with it. */
+const RANGE_TEST_XP = 40;
+
 function finishCapture(): void {
   stage = 'reveal';
   connection?.close();
   connection = null;
   if (playbackStarted) void postPlayback('/playback/stop').catch(() => {});
+
+  // Log it so the range test counts toward streaks/XP like any other
+  // session, and so the Progress screen's range trend has data points.
+  // Only when a range was actually measured — logging a no-signal run would
+  // inflate the streak for something the user didn't really complete.
+  const summary = tracker?.summary() ?? null;
+  if (summary) {
+    recordPracticeEntry({
+      timestamp: new Date().toISOString(),
+      exerciseId: 'range-test',
+      exerciseKind: 'range-test',
+      accuracyPct: 100,
+      durationMs: PHASE_DURATION_MS * 2,
+      xpEarned: RANGE_TEST_XP,
+      minMidi: summary.lowMidi,
+      maxMidi: summary.highMidi,
+    });
+  }
+
   render();
 }
 

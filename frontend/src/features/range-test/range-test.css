@@ -12,11 +12,6 @@
 .range-test__card {
   width: 100%;
 }
-.range-test__icon {
-  font-size: var(--text-3xl);
-  display: block;
-  margin-bottom: var(--space-3);
-}
 .range-test__card h1 {
   font-size: var(--text-xl);
   margin-bottom: var(--space-3);

@@ -25,8 +25,7 @@
 }
 
 #app-back-btn {
-  font-size: var(--text-lg);
-  padding: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-3);
 }
 #app-back-btn.hidden {
   display: none;
@@ -35,7 +34,6 @@
 .app-nav__item {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
   width: 100%;
   border: none;
   background: transparent;
@@ -55,15 +53,10 @@
   background: var(--color-surface-alt);
   color: var(--color-primary-dark);
 }
-.app-nav__icon {
-  font-size: var(--text-md);
-}
-
 @media (max-width: 900px) {
   .app-nav__item {
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-2);
+    justify-content: center;
+    padding: var(--space-3) var(--space-2);
     width: auto;
     flex: 1;
     text-align: center;
