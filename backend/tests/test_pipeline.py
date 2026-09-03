@@ -22,7 +22,6 @@ from backend.audio.pipeline import PlaybackPipeline, PlaybackState
 from backend.audio.pitch import PitchFrame
 from backend.main import app
 
-
 # ── PlaybackState machine ─────────────────────────────────────────────────────────────
 
 

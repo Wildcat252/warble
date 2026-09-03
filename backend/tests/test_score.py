@@ -8,13 +8,14 @@ Test scores (in musescore/):
   homeward_bound-PART_II.mxl  — Part II only (MuseScore export)
 """
 
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
 from music21 import bar, converter, meter, note, repeat, stream
 
-from backend.score.parser import _expand_repeats, _normalize_part_name, parse_musicxml
 from backend.score.model import ScoreModel
+from backend.score.parser import _expand_repeats, _normalize_part_name, parse_musicxml
 from backend.score.timeline import Timeline
 
 SCORES_DIR = Path(__file__).parent.parent.parent / "musescore"
@@ -113,7 +114,7 @@ class TestHomewardBoundRealScoreCoverage:
             notes = _part_notes(self.score, part_name)
             tied_boundaries = [
                 (a, b)
-                for a, b in zip(notes, notes[1:])
+                for a, b in pairwise(notes)
                 if a.midi == b.midi and (a.beat_start + a.duration) == pytest.approx(b.beat_start)
             ]
             assert tied_boundaries, f"Expected at least one tie-like boundary in {part_name}"

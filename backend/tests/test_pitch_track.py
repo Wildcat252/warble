@@ -2,7 +2,11 @@
 
 import numpy as np
 
-from backend.audio.pitch_track import PitchTrackConfig, _closest_octave, extract_pitch_frames
+from backend.audio.pitch_track import (
+    PitchTrackConfig,
+    _closest_octave,
+    extract_pitch_frames,
+)
 
 
 def _sine(freq_hz: float, seconds: float, sample_rate: int) -> np.ndarray:

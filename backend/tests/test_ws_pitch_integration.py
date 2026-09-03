@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack
 from unittest.mock import MagicMock
 
@@ -100,17 +101,17 @@ def test_add_client_without_running_loop_is_safe() -> None:
     """add_client called outside any event loop must not raise; _loop stays None."""
     pipeline = PlaybackPipeline(engine=Engine.PYIN)
     # Force _loop to None in case a loop is already running in the test process.
-    pipeline._loop = None  # noqa: SLF001
+    pipeline._loop = None
 
     q: asyncio.Queue = asyncio.Queue()
     # Patch get_running_loop to simulate no running loop — exercises the
     # RuntimeError branch in add_client.
-    import unittest.mock as mock
+    from unittest import mock
 
     with mock.patch("backend.audio.pipeline.asyncio.get_running_loop", side_effect=RuntimeError):
         pipeline.add_client(q)
 
-    assert pipeline._loop is None  # noqa: SLF001
+    assert pipeline._loop is None
     pipeline.remove_client(q)
 
 
@@ -132,7 +133,7 @@ def test_fan_out_suppresses_exception_from_bad_queue() -> None:
     mock_loop.call_soon_threadsafe.side_effect = _capture
 
     # Inject mock loop AFTER add_client so it overrides whatever loop was set.
-    pipeline._loop = mock_loop  # noqa: SLF001
+    pipeline._loop = mock_loop
 
     pipeline.inject_frame(t_ms=1.0, midi=60.0, conf=0.9)
 
@@ -158,7 +159,7 @@ def test_ws_pitch_logs_client_disconnect(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def _raise_disconnect(awaitable, timeout):  # noqa: ARG001
+    async def _raise_disconnect(awaitable, timeout):
         awaitable.close()
         raise backend_main.WebSocketDisconnect()
 
@@ -186,7 +187,7 @@ def test_ws_pitch_logs_unexpected_exceptions(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def _raise_runtime_error(awaitable, timeout):  # noqa: ARG001
+    async def _raise_runtime_error(awaitable, timeout):
         awaitable.close()
         raise RuntimeError("boom")
 

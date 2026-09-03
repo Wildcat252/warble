@@ -6,9 +6,13 @@ import math
 
 import pytest
 
-from backend.audio.music_analysis import _normalize_bpm, _pitch_class_index, estimate_key, estimate_tempo
+from backend.audio.music_analysis import (
+    _normalize_bpm,
+    _pitch_class_index,
+    estimate_key,
+    estimate_tempo,
+)
 from backend.models.transcription import NoteEvent
-
 
 A4_HZ = 440.0
 

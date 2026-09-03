@@ -64,3 +64,17 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "@pytest.mark.hardware",
 ]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are the documented way to declare a parameter
+# and are evaluated once at import, so B008 ("function call in default
+# argument") is a false positive for them — the rule exists to catch mutable
+# defaults like `def f(x=[])`, not this.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Query",
+]

@@ -369,5 +369,8 @@ class PlaybackPipeline:
                 loop.call_soon_threadsafe(q.put_nowait, payload)
             except asyncio.QueueFull:
                 log.warning("WS client queue full — dropping frame (client too slow)")
-            except Exception:
-                pass  # client may have disconnected — harmless
+            except Exception:  # noqa: BLE001, S110 — a disconnected WS client
+                # raises whatever the transport raises; dropping this frame is
+                # the correct response to any of it, and logging every frame of
+                # a dead connection at ~21fps would drown the log.
+                pass

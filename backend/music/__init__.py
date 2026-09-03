@@ -1,17 +1,17 @@
 """Music-domain notation and score helpers."""
 
-from .notation_policy import (
-    CrossBarNotePolicy,
-    DottedVsTiedPolicy,
-    NotationPolicy,
-    V1_NOTATION_POLICY,
-)
 from .musicxml_export import (
     MusicXMLExportError,
     score_model_to_music21_score,
     score_model_to_musicxml_bytes,
     score_model_to_musicxml_string,
     write_score_model_musicxml,
+)
+from .notation_policy import (
+    V1_NOTATION_POLICY,
+    CrossBarNotePolicy,
+    DottedVsTiedPolicy,
+    NotationPolicy,
 )
 from .quantization import quantize_note_events
 from .score_model import (
@@ -26,22 +26,22 @@ from .score_model import (
 )
 
 __all__ = [
-    "MusicXMLExportError",
-    "score_model_to_music21_score",
-    "score_model_to_musicxml_bytes",
-    "score_model_to_musicxml_string",
-    "write_score_model_musicxml",
-    "quantize_note_events",
+    "V1_NOTATION_POLICY",
+    "CrossBarNotePolicy",
+    "DottedVsTiedPolicy",
     "LyricSyllabic",
     "Measure",
+    "MusicXMLExportError",
+    "NotationPolicy",
     "NoteScoreEvent",
     "QuantizedEvent",
     "RestScoreEvent",
     "ScoreMetadata",
     "ScoreModel",
+    "quantize_note_events",
     "score_model_from_quantized_events",
-    "CrossBarNotePolicy",
-    "DottedVsTiedPolicy",
-    "NotationPolicy",
-    "V1_NOTATION_POLICY",
+    "score_model_to_music21_score",
+    "score_model_to_musicxml_bytes",
+    "score_model_to_musicxml_string",
+    "write_score_model_musicxml",
 ]

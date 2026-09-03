@@ -125,7 +125,9 @@ def pytest_collection_modifyitems(config, items):
     skip_hardware = None
     try:
         has_input_device = bool(sd.query_devices()) and _default_input_available(sd)
-    except Exception:
+    except Exception:  # noqa: BLE001 — probing audio hardware fails in many
+        # ways across CI images; any failure means "no device", and this must
+        # never abort collection.
         has_input_device = False
     if os.environ.get("GITHUB_ACTIONS") or not has_input_device:
         skip_hardware = pytest.mark.skip(reason="hardware tests skipped (no audio devices in this environment)")
@@ -144,5 +146,5 @@ def pytest_collection_modifyitems(config, items):
 def _default_input_available(sd) -> bool:
     try:
         return sd.query_devices(kind="input") is not None
-    except Exception:
+    except Exception:  # noqa: BLE001 — as above: any failure means no input.
         return False

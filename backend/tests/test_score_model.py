@@ -1,5 +1,7 @@
 """Tests for the internal notation-domain score model."""
 
+from pathlib import Path
+
 import pytest
 
 from backend.music import score_model as score_model_module
@@ -25,15 +27,17 @@ class TestScoreMetadata:
         assert metadata.beats_per_measure == 3.0
 
     def test_rejects_invalid_time_signature_format(self):
+        # beats_per_measure is a property, so reading it IS the call under
+        # test; binding the result keeps that obvious (and keeps B018 quiet).
         with pytest.raises(ValueError, match="numerator/denominator format"):
-            ScoreMetadata(time_signature="4").beats_per_measure
+            _ = ScoreMetadata(time_signature="4").beats_per_measure
 
     def test_rejects_non_positive_time_signature_parts(self):
         with pytest.raises(ValueError, match="numerator must be positive"):
-            ScoreMetadata(time_signature="0/4").beats_per_measure
+            _ = ScoreMetadata(time_signature="0/4").beats_per_measure
 
         with pytest.raises(ValueError, match="denominator must be positive"):
-            ScoreMetadata(time_signature="4/0").beats_per_measure
+            _ = ScoreMetadata(time_signature="4/0").beats_per_measure
 
 
 class TestScoreEvents:
@@ -260,6 +264,6 @@ class TestScoreModelAdapter:
         assert model.measures[0].total_duration_beats == pytest.approx(4.0)
 
     def test_module_remains_music21_free(self):
-        source = open(score_model_module.__file__, encoding="utf-8").read()
+        source = Path(score_model_module.__file__).read_text(encoding="utf-8")
 
         assert "music21" not in source

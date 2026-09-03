@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import math
+from collections.abc import Sequence
+from itertools import pairwise
 from typing import Final
 
 from backend.models.transcription import NoteEvent
@@ -84,7 +85,7 @@ def estimate_tempo(events: Sequence[NoteEvent]) -> float | None:
 
     onset_intervals = [
         current.start_time - previous.start_time
-        for previous, current in zip(valid_events[:-1], valid_events[1:], strict=True)
+        for previous, current in pairwise(valid_events)
         if (current.start_time - previous.start_time) > 0.0
     ]
     if not onset_intervals:
@@ -106,7 +107,7 @@ def _pitch_class_index(pitch_hz: float) -> int:
         raise ValueError("pitch_hz must be positive")
 
     midi = 69.0 + (12.0 * math.log2(pitch_hz / 440.0))
-    return int(round(midi)) % 12
+    return round(midi) % 12
 
 
 def _rotate_profile(profile: tuple[float, ...], steps: int) -> tuple[float, ...]:

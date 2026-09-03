@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from typing import Final, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Final
 
 from backend.models.transcription import NoteEvent
 
-from .notation_policy import NotationPolicy, V1_NOTATION_POLICY
+from .notation_policy import V1_NOTATION_POLICY, NotationPolicy
 from .score_model import QuantizedEvent
 
 # Default tempo used when callers do not provide one.

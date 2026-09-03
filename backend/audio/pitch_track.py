@@ -62,7 +62,7 @@ def extract_pitch_frames(audio: np.ndarray, config: PitchTrackConfig) -> list[Pi
     Unvoiced frames are still returned with ``midi=0.0`` so downstream stages can
     detect silence spans without reconstructing frame timing.
     """
-    import librosa  # noqa: PLC0415
+    import librosa
 
     if audio.ndim != 1:
         raise ValueError("audio must be mono (1D ndarray)")

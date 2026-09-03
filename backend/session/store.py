@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -25,7 +25,7 @@ def _ensure_dir() -> Path:
 
 
 def build_session_filename(title: str, part: str, now: datetime | None = None) -> str:
-    timestamp = (now or datetime.now(tz=timezone.utc)).strftime("%Y%m%d_%H%M%S")
+    timestamp = (now or datetime.now(tz=UTC)).strftime("%Y%m%d_%H%M%S")
     return f"{_slug(title)}_{_slug(part)}_{timestamp}.json"
 
 
@@ -70,7 +70,7 @@ def list_sessions() -> list[dict[str, Any]]:
                 "id": path.stem,
                 "title": payload.get("title", ""),
                 "part": payload.get("part", ""),
-                "created_at": payload.get("created_at", datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()),
+                "created_at": payload.get("created_at", datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()),
                 "frame_count": frame_count,
             }
         )

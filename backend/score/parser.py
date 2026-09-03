@@ -9,12 +9,13 @@ Homeward Bound score exported from Audiveris).
 
 from __future__ import annotations
 
-import zipfile
-import xml.etree.ElementTree as ET
 import re
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
-from music21 import converter, meter, tempo as m21tempo
+from music21 import converter, meter
+from music21 import tempo as m21tempo
 from music21.stream import Score
 
 from .model import Note, ScoreModel, TempoMark, TimeSignature
@@ -85,7 +86,9 @@ def _expand_repeats(score: Score) -> Score:
     """
     try:
         expanded = score.expandRepeats()
-    except Exception:
+    except Exception:  # noqa: BLE001 — music21 raises many types for a
+        # malformed repeat structure; an upload must never fail over one, so
+        # the unexpanded score is the documented fallback (see the docstring).
         return score
     return expanded if isinstance(expanded, Score) else score
 
@@ -213,11 +216,12 @@ def _get_xml_content(path: Path) -> str | None:
                 for name in zf.namelist():
                     if name.endswith(".xml") and not name.startswith("META-INF"):
                         return zf.read(name).decode("utf-8")
-        except Exception:
+        except Exception:  # noqa: BLE001 — a corrupt .mxl can fail inside
+            # zipfile, the codec, or the XML scan; all mean "unreadable".
             return None
     else:
         try:
             return path.read_text(encoding="utf-8")
-        except Exception:
+        except Exception:  # noqa: BLE001 — as above, for a plain .xml file.
             return None
     return None

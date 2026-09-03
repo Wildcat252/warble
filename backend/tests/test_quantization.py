@@ -7,9 +7,17 @@ import math
 import pytest
 
 from backend.models.transcription import NoteEvent
-from backend.music import ScoreMetadata, quantize_note_events, score_model_from_quantized_events
-from backend.music.quantization import _build_rest_events, _choose_duration, _midi_to_pitch_name
+from backend.music import (
+    ScoreMetadata,
+    quantize_note_events,
+    score_model_from_quantized_events,
+)
 from backend.music.notation_policy import V1_NOTATION_POLICY
+from backend.music.quantization import (
+    _build_rest_events,
+    _choose_duration,
+    _midi_to_pitch_name,
+)
 
 
 def _hz_from_midi(midi: int) -> float:

@@ -8,8 +8,8 @@ import time
 
 import numpy as np
 import torch
-import torchcrepe
 import torchaudio.functional as F
+import torchcrepe
 
 SAMPLE_RATE = 22050
 CREPE_SR = 16000

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+import wave
 from dataclasses import dataclass
 from enum import Enum
-import logging
 from pathlib import Path
-import wave
 
 import librosa
 import numpy as np
@@ -20,8 +20,8 @@ from backend.music import (
     score_model_from_quantized_events,
     score_model_to_musicxml_string,
 )
-from backend.music.quantization import _midi_to_pitch_name as _quantization_pitch_name
 from backend.music.notation_policy import V1_NOTATION_POLICY
+from backend.music.quantization import _midi_to_pitch_name as _quantization_pitch_name
 
 SUPPORTED_AUDIO_SUFFIXES = {".wav", ".wave", ".mp3"}
 SAMPLE_RATE = 22050
@@ -41,7 +41,7 @@ class TranscriptionError(ValueError):
         message: str,
         *,
         category: str | None = None,
-        error_type: "TranscriptionErrorType | None" = None,
+        error_type: TranscriptionErrorType | None = None,
     ) -> None:
         super().__init__(message)
         resolved_error_type = error_type

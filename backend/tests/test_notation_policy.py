@@ -3,10 +3,10 @@
 from fractions import Fraction
 
 from backend.music.notation_policy import (
+    V1_NOTATION_POLICY,
     CrossBarNotePolicy,
     DottedVsTiedPolicy,
     NotationPolicy,
-    V1_NOTATION_POLICY,
 )
 
 

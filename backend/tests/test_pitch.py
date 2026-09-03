@@ -8,29 +8,28 @@ Acceptance criteria from issue #3:
   AC4: Frames below confidence threshold are dropped, not emitted
 """
 
-import time
-import threading
 import builtins
+import threading
+import time
 
 import numpy as np
 import pytest
 import torch
 
 from backend.audio.pitch import (
+    CONFIDENCE_THRESHOLD,
+    SAMPLE_RATE,
     Engine,
     EngineRuntimeInfo,
     PitchFrame,
     PitchPipeline,
-    CONFIDENCE_THRESHOLD,
-    SAMPLE_RATE,
+    _infer_pyin,
+    _infer_torchcrepe,
     hz_to_midi,
     midi_to_hz,
     resolve_engine_runtime,
     select_engine,
-    _infer_torchcrepe,
-    _infer_pyin,
 )
-
 
 # ── Conversion helpers ───────────────────────────────────────────────────────────────
 
@@ -285,7 +284,8 @@ class TestPitchPipeline:
             try:
                 for _ in range(50):
                     pipeline.push(np.zeros(2048, dtype=np.float32))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — the point of the test is
+                # to surface ANY exception raised on a worker thread.
                 errors.append(e)
 
         threads = [threading.Thread(target=pusher) for _ in range(4)]

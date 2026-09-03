@@ -19,18 +19,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.audio.capture import (
-    RingBuffer,
-    WINDOW_SIZE,
     HOP_SIZE,
     SAMPLE_RATE,
-    list_input_devices,
-    default_input_device_id,
+    WINDOW_SIZE,
     AudioDevice,
     AudioSession,
     MicCapture,
+    RingBuffer,
+    default_input_device_id,
+    list_input_devices,
 )
 from backend.main import app
-
 
 # ── RingBuffer ─────────────────────────────────────────────────────────────────
 
@@ -305,7 +304,8 @@ class TestAudioSession:
             try:
                 for _ in range(1000):
                     session.device_id = val
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 — the point of the test is
+                # to surface ANY exception raised on a worker thread.
                 errors.append(e)
 
         threads = [threading.Thread(target=write, args=(i,)) for i in range(4)]

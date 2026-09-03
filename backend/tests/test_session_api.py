@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from datetime import UTC
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -138,8 +139,8 @@ def test_save_session_collision_appends_uuid_suffix(monkeypatch) -> None:
         }
 
         # Freeze the filename by fixing datetime.now()
-        from datetime import datetime, timezone
-        fixed_now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        from datetime import datetime
+        fixed_now = datetime(2026, 1, 1, tzinfo=UTC)
 
         import backend.session.store as store_module
         original_build = store_module.build_session_filename
@@ -149,8 +150,8 @@ def test_save_session_collision_appends_uuid_suffix(monkeypatch) -> None:
 
         monkeypatch.setattr(store_module, "build_session_filename", fixed_filename)
 
-        id1, path1 = store.save_session(payload)
-        id2, path2 = store.save_session(payload)
+        _id1, path1 = store.save_session(payload)
+        _id2, path2 = store.save_session(payload)
 
         assert path1 != path2, "Second save must use a different path"
         assert path1.exists()

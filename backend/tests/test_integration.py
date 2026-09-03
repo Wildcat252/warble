@@ -46,13 +46,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from backend.audio.capture import SAMPLE_RATE, WINDOW_SIZE, HOP_SIZE
+from backend.audio.capture import HOP_SIZE, SAMPLE_RATE, WINDOW_SIZE
+from backend.audio.pipeline import PlaybackPipeline, PlaybackState
 from backend.audio.pitch import (
     Engine,
     PitchFrame,
     PitchPipeline,
 )
-from backend.audio.pipeline import PlaybackPipeline, PlaybackState
 from backend.score.parser import parse_musicxml
 from backend.score.timeline import Timeline
 
@@ -457,12 +457,12 @@ def _record(key: str, p50: float, p95: float, max_val: float) -> None:
     _latency_results[key] = {"p50": p50, "p95": p95, "max": max_val}
 
 
-def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001
+def pytest_sessionfinish(session, exitstatus) -> None:
     """Write docs/latency-baseline.md if any measurements were collected this run."""
     if not _latency_results:
         return
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     def _row(key: str, label: str, budget_ms: float) -> str:
         r = _latency_results.get(key)
