@@ -59,27 +59,100 @@ export async function setForceCpu(forceCpu: boolean): Promise<void> {
 }
 
 /**
- * Returns null when nothing is stored, which /playback/start treats as
- * "use the backend's own default input device" — the right behaviour for
- * anyone who never opens Settings.
+ * What we remember about the chosen device.
+ *
+ * The NAME is stored alongside the index because a PortAudio index is not a
+ * stable identifier. Connecting or removing a device renumbers everything
+ * after it: with an iPhone attached, index 1 on this machine is "MacBook Air
+ * Microphone"; unplug it and index 1 becomes "MacBook Air Speakers", an
+ * output. A stored index therefore silently comes to mean a different
+ * device — and pointing capture at an output raises PortAudio -9998, which
+ * surfaced as an unexplained HTTP 500 at the start of an exercise.
+ *
+ * The name is what the user actually chose, so it is the better key; the
+ * index is kept as a fast path and a tie-breaker between identically named
+ * devices.
  */
-export function loadBackendDeviceId(): number | null {
+interface StoredDevice {
+  id: number;
+  name: string;
+}
+
+function readStored(): StoredDevice | null {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw === null || raw === '') return null;
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isNaN(parsed) ? null : parsed;
+    // Values written before names were stored are a bare integer.
+    if (/^-?\d+$/.test(raw.trim())) {
+      return { id: Number.parseInt(raw, 10), name: '' };
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const { id, name } = parsed as Partial<StoredDevice>;
+    if (typeof id !== 'number' || Number.isNaN(id)) return null;
+    return { id, name: typeof name === 'string' ? name : '' };
   } catch {
     return null;
   }
 }
 
-export function persistBackendDeviceId(deviceId: number | null): void {
+/**
+ * Returns null when nothing is stored, which /playback/start treats as
+ * "use the backend's own default input device" — the right behaviour for
+ * anyone who never opens Settings.
+ *
+ * This is the RAW stored index and may be stale; anything about to open the
+ * device should call resolveBackendDeviceId() against a fresh device list
+ * instead. Kept for the Settings picker, which only needs to show the current
+ * selection, and for the calibration check that compares "same device?".
+ */
+export function loadBackendDeviceId(): number | null {
+  return readStored()?.id ?? null;
+}
+
+export interface ResolvedDevice {
+  /** Index to send to /playback/start, or null to use the backend default. */
+  id: number | null;
+  /** True when the stored index had drifted and was recovered by name. */
+  repaired: boolean;
+  /** True when the stored device is gone entirely and the default is being used. */
+  fellBack: boolean;
+  name: string | null;
+}
+
+/**
+ * Maps the stored choice onto the device list as it is RIGHT NOW.
+ *
+ * Order matters: the name is trusted over the index, because the name is what
+ * the user picked and the index is only where it happened to sit that day.
+ */
+export function resolveBackendDeviceId(list: BackendAudioDeviceList): ResolvedDevice {
+  const stored = readStored();
+  if (!stored) return { id: null, repaired: false, fellBack: false, name: null };
+
+  const byId = list.devices.find((d) => d.id === stored.id);
+  if (byId && (stored.name === '' || byId.name === stored.name)) {
+    return { id: byId.id, repaired: false, fellBack: false, name: byId.name };
+  }
+
+  const byName = stored.name === ''
+    ? undefined
+    : list.devices.find((d) => d.name === stored.name);
+  if (byName) {
+    return { id: byName.id, repaired: true, fellBack: false, name: byName.name };
+  }
+
+  // Gone: an index that now means something else, with no matching name.
+  // Falling back beats failing to start at all.
+  return { id: null, repaired: false, fellBack: true, name: stored.name || null };
+}
+
+export function persistBackendDeviceId(deviceId: number | null, name = ''): void {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return;
   try {
     if (deviceId === null) window.localStorage.removeItem(STORAGE_KEY);
-    else window.localStorage.setItem(STORAGE_KEY, String(deviceId));
+    else window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: deviceId, name }));
   } catch {
     // Non-critical: falling back to the backend default is acceptable.
   }

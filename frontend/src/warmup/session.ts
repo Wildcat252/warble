@@ -15,6 +15,26 @@ export interface WarmupSegment {
   label: string;
 }
 
+/**
+ * Shortest segment worth scoring. Mirrors MIN_SLOT_MS in
+ * exercises/custom-types.ts (kept as a local constant rather than an import so
+ * this module stays below exercises/ in the dependency order): under ~400ms a
+ * note is shorter than the pitch pipeline's own settling time and can never be
+ * scored as a hit. A phase whose remaining time is below this ends early
+ * instead of emitting an unhittable stub.
+ */
+const MIN_SEGMENT_MS = 400;
+
+/**
+ * Rest inserted after each full pass of a pattern.
+ *
+ * Segments used to run back-to-back for the whole two minutes, which left the
+ * singer no room to breathe — and because a breath produces no confident
+ * pitch frames, every breath was scored as a missed note. A rest per phrase
+ * (rather than per note) is how singers actually breathe.
+ */
+const BREATH_MS = 600;
+
 export function buildWarmupSequence(totalSeconds: number, anchorMidi = 60): WarmupSegment[] {
   const clampedSeconds = Math.max(30, Math.min(300, totalSeconds));
   const totalMs = clampedSeconds * 1000;
@@ -28,11 +48,19 @@ export function buildWarmupSequence(totalSeconds: number, anchorMidi = 60): Warm
     pattern: number[],
     holdMs: number,
   ): void => {
+    const phaseEnd = startMs + durationMs;
     let t = startMs;
     let i = 0;
-    while (t < startMs + durationMs) {
+    while (t < phaseEnd) {
+      // Breathe between phrases, not between notes.
+      if (i > 0 && i % pattern.length === 0) {
+        t += BREATH_MS;
+        if (t >= phaseEnd) break;
+      }
       const midi = pattern[i % pattern.length] ?? anchorMidi;
-      const endMs = Math.min(startMs + durationMs, t + holdMs);
+      const endMs = Math.min(phaseEnd, t + holdMs);
+      // Trailing stub at the phase boundary — end the phase rather than emit it.
+      if (endMs - t < MIN_SEGMENT_MS) break;
       segments.push({
         exercise,
         startMs: t,

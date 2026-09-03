@@ -35,7 +35,11 @@ function normalizeSettings(settings: StableNoteSettings): StableNoteSettings {
   return {
     minConfidence: Math.min(0.99, Math.max(0, settings.minConfidence)),
     clusteringToleranceCents: Math.min(200, Math.max(5, settings.clusteringToleranceCents)),
-    holdDurationMs: Math.min(2000, Math.max(20, settings.holdDurationMs)),
+    // Ceiling raised from 2000ms once exercise definitions began driving this:
+    // the custom-exercise editor permits a note of 16 slots x 4000ms, and
+    // validates hold time against that, so a legitimate setting can reach 64s.
+    // A lower cap here would silently score a long hold as a much shorter one.
+    holdDurationMs: Math.min(64_000, Math.max(20, settings.holdDurationMs)),
     smoothingWindowMs: Math.min(4000, Math.max(40, settings.smoothingWindowMs)),
   };
 }

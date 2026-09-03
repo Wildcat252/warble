@@ -51,3 +51,46 @@ export function colorForMidi(
   const hue = hueForNormalizedHeight(t);
   return `hsl(${hue.toFixed(1)}, ${saturation}%, ${lightness}%)`;
 }
+
+/* Register shading on the sung trace.
+ *
+ * Hue stays reserved for PITCH HEIGHT — the trace already carries that
+ * meaning, and the older in-tune/out-of-tune colouring was demoted to the puck
+ * ring precisely because two meanings on one stroke was too much. Register is
+ * therefore encoded as LIGHTNESS + STROKE WIDTH instead, which is also
+ * semantically apt: singers already describe chest as thick and dark, head as
+ * light and thin, so this reinforces existing vocabulary rather than inventing
+ * a new code.
+ *
+ * Lightness alone is weak for low-vision users; the stroke-width pairing and
+ * the textual badge in the player are what make it acceptable.
+ */
+const REGISTER_LIGHTNESS_CHEST = 42;
+const REGISTER_LIGHTNESS_HEAD = 74;
+export const REGISTER_WIDTH_CHEST = 8;
+export const REGISTER_WIDTH_HEAD = 4;
+
+/**
+ * Trace colour for a sample, shaded by register position when known.
+ *
+ * `registerPosition === null` MUST reproduce colorForMidi's default exactly,
+ * so an uncalibrated graph is pixel-identical to the pre-register one.
+ */
+export function colorForMidiAndRegister(
+  midi: number,
+  minMidi: number,
+  maxMidi: number,
+  registerPosition: number | null,
+): string {
+  if (registerPosition === null) return colorForMidi(midi, minMidi, maxMidi);
+  const t = Math.max(0, Math.min(1, registerPosition));
+  const lightness = REGISTER_LIGHTNESS_CHEST + t * (REGISTER_LIGHTNESS_HEAD - REGISTER_LIGHTNESS_CHEST);
+  return colorForMidi(midi, minMidi, maxMidi, 72, lightness);
+}
+
+/** Stroke width for a sample: thick for chest, thin for head, default when unknown. */
+export function traceWidthForRegister(registerPosition: number | null, fallback: number): number {
+  if (registerPosition === null) return fallback;
+  const t = Math.max(0, Math.min(1, registerPosition));
+  return REGISTER_WIDTH_CHEST + t * (REGISTER_WIDTH_HEAD - REGISTER_WIDTH_CHEST);
+}

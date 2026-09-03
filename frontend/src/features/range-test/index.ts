@@ -26,6 +26,12 @@ import type { Screen } from '../../screen-types';
 import { navigate, goBack } from '../../navigation/router';
 import { SessionRangeTracker } from '../../pitch/session-range';
 import { voiceTypeForRange } from '../../pitch/voice-type';
+import {
+  fitCalibration, isAcceptableCalibrationFrame, persistRegisterCalibration,
+  describeSeparation,
+  MIN_REGISTER_FRAMES, MIN_SEPARATION_DB,
+  type CalibrationSample, type RegisterCalibration,
+} from '../../pitch/register-calibration';
 import { persistUserVoiceTypeId } from '../../services/user-settings';
 import { recordPracticeEntry } from '../../gamification/practice-log';
 import { loadBackendDeviceId } from '../../services/audio-device';
@@ -38,9 +44,25 @@ import { startPlayback, postPlayback } from '../../transport/controls';
 import { setAppStatus } from '../../services/status';
 import './range-test.css';
 
-type Stage = 'intro' | 'low' | 'high' | 'reveal';
+type Stage = 'intro' | 'low' | 'high' | 'calib-chest' | 'calib-head' | 'reveal';
 
 const PHASE_DURATION_MS = 6000;
+/**
+ * Calibration asks for a short ASCENDING PATTERN, not one sustained note, so
+ * the fit has a pitch span to estimate a slope from — see
+ * register-calibration.ts. Nine seconds is roughly five or six comfortable
+ * notes with breath between them.
+ */
+const CALIBRATION_DURATION_MS = 9000;
+
+/** True while the current stage is capturing a register anchor rather than range. */
+function isCalibrationStage(s: Stage): boolean {
+  return s === 'calib-chest' || s === 'calib-head';
+}
+
+function phaseDurationMs(): number {
+  return isCalibrationStage(stage) ? CALIBRATION_DURATION_MS : PHASE_DURATION_MS;
+}
 
 let stage: Stage = 'intro';
 let tracker: SessionRangeTracker | null = null;
@@ -50,6 +72,16 @@ let stopped = false;
 let phaseTimer: number | null = null;
 let phaseStartedAtMs = 0;
 let phaseRafId: number | null = null;
+let chestSamples: CalibrationSample[] = [];
+let headSamples: CalibrationSample[] = [];
+let savedCalibration: RegisterCalibration | null = null;
+let calibrationError: string | null = null;
+/** Backend DSP version, learned from the WS handshake. Null until connected. */
+let featureVersion: number | null = null;
+
+function registerFeatureVersion(): number | null {
+  return featureVersion;
+}
 let container: HTMLElement | null = null;
 
 function resetState(): void {
@@ -62,6 +94,11 @@ function resetState(): void {
   phaseStartedAtMs = 0;
   phaseRafId = null;
   container = null;
+  chestSamples = [];
+  headSamples = [];
+  savedCalibration = null;
+  calibrationError = null;
+  featureVersion = null;
 }
 
 function clearPhaseTimer(): void {
@@ -93,6 +130,7 @@ function render(): void {
   if (!container) return;
   if (stage === 'intro') return renderIntro(container);
   if (stage === 'low' || stage === 'high') return renderCapture(container);
+  if (isCalibrationStage(stage)) return renderCalibration(container);
   renderReveal(container);
 }
 
@@ -101,7 +139,11 @@ function renderIntro(root: HTMLElement): void {
     <div class="range-test range-test--intro fade-in">
       <div class="card range-test__card">
         <h1>Find your voice type</h1>
-        <p>You'll glide down to your lowest comfortable note, then up to your highest. No need to strain — comfortable is better than extreme.</p>
+        <p>Four short steps. First you'll glide down to your lowest comfortable note, then up
+           to your highest — no need to strain, comfortable is better than extreme.</p>
+        <p>Then you'll hold one note twice, once in chest voice and once in head voice, so we
+           can tell them apart while you practise. Headphones help: the reference tone leaking
+           back into your mic is measured as if it were your voice.</p>
         <button type="button" class="btn btn-primary" id="range-test-begin">Begin</button>
       </div>
     </div>
@@ -134,6 +176,64 @@ function renderCapture(root: HTMLElement): void {
   });
 }
 
+/**
+ * Calibration prompt. The vowel is SPECIFIED, not left free: H1-H2 is
+ * filtered by the vocal tract, so a different vowel between the two takes
+ * would show up as a register difference that isn't one.
+ */
+function renderCalibration(root: HTMLElement): void {
+  const isChest = stage === 'calib-chest';
+  root.innerHTML = `
+    <div class="range-test fade-in">
+      <div class="range-test__prompt">
+        <h1>${isChest ? 'Sing 5 notes in your chest voice' : 'Now 5 notes in your head voice'}</h1>
+        <p>
+          ${isChest
+    ? 'Climb five comfortable notes in the LOW part of your range, full and strong like your speaking voice.'
+    : 'Climb five comfortable notes in the HIGH part of your range, light and airy.'}
+          Hold each for about a second, on "ah".
+        </p>
+        <p class="range-test__hint">
+          They don't need to be exact notes, and the two sets don't need to overlap —
+          we just need a few different pitches in each.
+        </p>
+      </div>
+      <div class="range-test__progress-track"><div class="range-test__progress-fill" id="range-test-progress"></div></div>
+      <div class="card range-test__readout-card">
+        <div class="range-test__detected" id="range-test-detected">Detected: —</div>
+        <div class="range-test__span" id="range-test-span">Captured: 0 usable frames</div>
+      </div>
+      <button type="button" class="btn btn-secondary" id="range-test-next">Done with this one</button>
+    </div>
+  `;
+  root.querySelector<HTMLButtonElement>('#range-test-next')?.addEventListener('click', () => {
+    advanceStage();
+  });
+}
+
+/**
+ * Reports what calibration measured in plain language, including the failure
+ * cases. A silent failure would be worse than none: the singer would think
+ * register detection is on when it isn't.
+ */
+function renderCalibrationResult(): string {
+  if (calibrationError) {
+    return `<p class="range-test__hint range-test__hint--warn">${calibrationError}</p>`;
+  }
+  if (!savedCalibration) return '';
+  const sep = savedCalibration.h1h2.headIntercept - savedCalibration.h1h2.chestIntercept;
+  const weak = !savedCalibration.h1h2.slopeEstimated;
+  return `
+    <p class="range-test__hint">
+      Register detection is set up: your chest and head voice measured
+      <strong>${sep.toFixed(1)} dB apart</strong> — ${describeSeparation(sep)}.
+      ${weak
+    ? 'Both sets landed on nearly one pitch each, so readings far from those notes will be rougher — sing a wider spread next time for a better fit.'
+    : ''}
+    </p>
+  `;
+}
+
 function renderReveal(root: HTMLElement): void {
   const summary = tracker?.summary() ?? null;
   // voiceTypeForRange, NOT classifyVoiceType: the latter also demands 10
@@ -158,6 +258,7 @@ function renderReveal(root: HTMLElement): void {
     : ''
 }
         ${!summary ? '<p class="range-test__hint">We couldn\'t detect enough of your voice — check your mic in Settings and try again.</p>' : ''}
+        ${renderCalibrationResult()}
         <div class="range-test__actions">
           ${voiceType ? '<button type="button" class="btn btn-primary" id="range-test-save">Save as my voice type</button>' : ''}
           <button type="button" class="btn btn-secondary" id="range-test-done">${voiceType ? 'Skip' : 'Done'}</button>
@@ -197,17 +298,55 @@ function updateProgressBar(): void {
   const fillEl = container.querySelector<HTMLElement>('#range-test-progress');
   if (!fillEl) return;
   const elapsed = performance.now() - phaseStartedAtMs;
-  const pct = Math.max(0, Math.min(100, (elapsed / PHASE_DURATION_MS) * 100));
+  const pct = Math.max(0, Math.min(100, (elapsed / phaseDurationMs()) * 100));
   fillEl.style.width = `${pct}%`;
-  if (elapsed < PHASE_DURATION_MS && !stopped) {
+  if (elapsed < phaseDurationMs() && !stopped) {
     phaseRafId = requestAnimationFrame(updateProgressBar);
   }
 }
 
 function handleFrame(frame: PitchFrame): void {
+  if (isCalibrationStage(stage)) {
+    collectCalibrationFrame(frame);
+    return;
+  }
   if (!tracker) return;
   tracker.ingest(frame, MIN_CONFIDENCE_FOR_DOT);
   updateCaptureReadout(frame);
+}
+
+/**
+ * Accumulates one anchor's frames. Filtering happens HERE rather than at
+ * reduce time so the on-screen count reflects usable frames, letting the
+ * singer see immediately that a take isn't landing instead of finding out
+ * after four seconds.
+ */
+function collectCalibrationFrame(frame: PitchFrame): void {
+  if (!frame.features || !container) return;
+  const sample: CalibrationSample = { tMs: performance.now(), midi: frame.midi, features: frame.features };
+  if (!isAcceptableCalibrationFrame(sample, phaseStartedAtMs)) {
+    updateCalibrationReadout(frame);
+    return;
+  }
+  (stage === 'calib-chest' ? chestSamples : headSamples).push(sample);
+  updateCalibrationReadout(frame);
+}
+
+function updateCalibrationReadout(frame: PitchFrame): void {
+  if (!container) return;
+  const detectedEl = container.querySelector<HTMLElement>('#range-test-detected');
+  const countEl = container.querySelector<HTMLElement>('#range-test-span');
+  if (detectedEl) {
+    detectedEl.textContent = frame.conf >= MIN_CONFIDENCE_FOR_DOT
+      ? `Detected: ${midiToNoteName(frame.midi)}`
+      : 'Detected: —';
+  }
+  if (countEl) {
+    const n = (stage === 'calib-chest' ? chestSamples : headSamples).length;
+    countEl.textContent = n >= MIN_REGISTER_FRAMES
+      ? `Captured: ${n} usable frames — that's enough`
+      : `Captured: ${n} usable frames (need ${MIN_REGISTER_FRAMES})`;
+  }
 }
 
 function startPhaseTimer(): void {
@@ -216,7 +355,7 @@ function startPhaseTimer(): void {
   phaseRafId = requestAnimationFrame(updateProgressBar);
   phaseTimer = window.setTimeout(() => {
     advanceStage();
-  }, PHASE_DURATION_MS);
+  }, phaseDurationMs());
 }
 
 function advanceStage(): void {
@@ -229,15 +368,29 @@ function advanceStage(): void {
     return;
   }
   if (stage === 'high') {
+    stage = 'calib-chest';
+    render();
+    startPhaseTimer();
+    return;
+  }
+  if (stage === 'calib-chest') {
+    stage = 'calib-head';
+    render();
+    startPhaseTimer();
+    return;
+  }
+  if (stage === 'calib-head') {
     finishCapture();
   }
 }
+
 
 /** Flat award — the range test isn't scored on accuracy, so XP can't scale with it. */
 const RANGE_TEST_XP = 40;
 
 function finishCapture(): void {
   stage = 'reveal';
+  saveCalibration();
   connection?.close();
   connection = null;
   if (playbackStarted) void postPlayback('/playback/stop').catch(() => {});
@@ -261,6 +414,36 @@ function finishCapture(): void {
   }
 
   render();
+}
+
+/**
+ * Reduces the two captures to anchors and stores them — but only if they
+ * actually separate. Anchors that measure the same mean the takes didn't
+ * differ in register, and saving them would produce confident nonsense.
+ */
+function saveCalibration(): void {
+  calibrationError = null;
+  savedCalibration = null;
+
+  const fit = fitCalibration(chestSamples, headSamples);
+  if (!fit) {
+    calibrationError = "We didn't capture enough of either pattern to set up register detection.";
+    return;
+  }
+
+  if (fit.separationDb < MIN_SEPARATION_DB) {
+    calibrationError = `Those two patterns measured ${fit.separationDb.toFixed(1)} dB apart — `
+      + `${describeSeparation(fit.separationDb)}. Try again, making the second set much lighter.`;
+    return;
+  }
+
+  const featureVersion = registerFeatureVersion();
+  savedCalibration = featureVersion === null
+    ? null
+    : persistRegisterCalibration(fit, featureVersion);
+  if (!savedCalibration) {
+    calibrationError = "Couldn't save your calibration — your browser may be blocking local storage.";
+  }
 }
 
 async function beginCapture(): Promise<void> {
@@ -299,7 +482,10 @@ async function beginCapture(): Promise<void> {
   }
   if (stopped) return; // unmounted mid-start
 
-  connection = new PitchConnection({ onFrame: handleFrame });
+  connection = new PitchConnection({
+    onFrame: handleFrame,
+    onConnected: (version) => { featureVersion = version; },
+  });
   connection.connect();
   startPhaseTimer();
 }

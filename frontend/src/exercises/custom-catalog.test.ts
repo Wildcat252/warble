@@ -15,8 +15,12 @@ function spec(overrides: Partial<CustomExerciseSpec> = {}): CustomExerciseSpec {
     description: 'Root, 3rd, 5th',
     difficulty: 'easy',
     scoringStrategy: 'continuous-cents',
-    steps: [{ offset: 0, label: 'Root' }, { offset: 4 }, { offset: 7 }],
-    msPerNote: 2000,
+    notes: [
+      { offset: 0, startSlot: 0, lengthSlots: 1, label: 'Root' },
+      { offset: 4, startSlot: 1, lengthSlots: 1 },
+      { offset: 7, startSlot: 2, lengthSlots: 1 },
+    ],
+    slotMs: 2000,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -28,8 +32,12 @@ const baseInput = {
   description: 'Root, 3rd, 5th',
   difficulty: 'easy' as const,
   scoringStrategy: 'continuous-cents' as const,
-  steps: [{ offset: 0 }, { offset: 4 }, { offset: 7 }],
-  msPerNote: 2000,
+  notes: [
+    { offset: 0, startSlot: 0, lengthSlots: 1 },
+    { offset: 4, startSlot: 1, lengthSlots: 1 },
+    { offset: 7, startSlot: 2, lengthSlots: 1 },
+  ],
+  slotMs: 2000,
 };
 
 beforeEach(() => {
@@ -43,7 +51,7 @@ describe('specToDefinition', () => {
     expect(def.generate({ anchorMidi: 48 }).map((t) => t.midi)).toEqual([48, 52, 55]);
   });
 
-  it('schedules targets back to back with no gaps or overlap', () => {
+  it('schedules uniform targets back to back with no gaps or overlap', () => {
     const targets = specToDefinition(spec()).generate({ anchorMidi: 60 });
     expect(targets.map((t) => [t.startMs, t.endMs])).toEqual([[0, 2000], [2000, 4000], [4000, 6000]]);
   });
@@ -54,8 +62,18 @@ describe('specToDefinition', () => {
     expect(targets[1].label).toBeUndefined();
   });
 
-  it('derives estSeconds from note count and length', () => {
+  it('derives estSeconds from grid span and column length', () => {
     expect(specToDefinition(spec()).estSeconds).toBe(6);
+  });
+
+  it('pays more for a harder exercise of the same length', () => {
+    // difficulty used to be cosmetic: the editor offered it, the picker showed
+    // it, and xp ignored it entirely.
+    const easy = specToDefinition(spec({ difficulty: 'easy' })).xpBase;
+    const medium = specToDefinition(spec({ difficulty: 'medium' })).xpBase;
+    const hard = specToDefinition(spec({ difficulty: 'hard' })).xpBase;
+    expect(medium).toBeGreaterThan(easy);
+    expect(hard).toBeGreaterThan(medium);
   });
 
   it('drops holdDurationMs when scoring is not stable-hold', () => {
@@ -69,12 +87,49 @@ describe('specToDefinition', () => {
   });
 
   it('caps XP so a very long exercise cannot out-earn every built-in', () => {
-    const steps = Array.from({ length: 64 }, () => ({ offset: 0 }));
-    expect(specToDefinition(spec({ steps })).xpBase).toBeLessThanOrEqual(80);
+    const notes = Array.from({ length: 64 }, (_, i) => ({ offset: 0, startSlot: i, lengthSlots: 1 }));
+    expect(specToDefinition(spec({ notes })).xpBase).toBeLessThanOrEqual(80);
   });
 
   it('awards a floor of XP for a one-note exercise', () => {
-    expect(specToDefinition(spec({ steps: [{ offset: 0 }] })).xpBase).toBeGreaterThanOrEqual(10);
+    const notes = [{ offset: 0, startSlot: 0, lengthSlots: 1 }];
+    expect(specToDefinition(spec({ notes })).xpBase).toBeGreaterThanOrEqual(10);
+  });
+
+  it('honours per-note lengths in the generated targets', () => {
+    const notes = [
+      { offset: 0, startSlot: 0, lengthSlots: 3 },
+      { offset: 7, startSlot: 3, lengthSlots: 1 },
+    ];
+    const targets = specToDefinition(spec({ notes, slotMs: 1000 })).generate({ anchorMidi: 60 });
+    expect(targets.map((t) => [t.startMs, t.endMs])).toEqual([[0, 3000], [3000, 4000]]);
+  });
+
+  it('leaves a real gap in the timeline for a rest', () => {
+    const notes = [
+      { offset: 0, startSlot: 0, lengthSlots: 1 },
+      { offset: 7, startSlot: 3, lengthSlots: 1 },
+    ];
+    const targets = specToDefinition(spec({ notes, slotMs: 1000 })).generate({ anchorMidi: 60 });
+    expect(targets[0].endMs).toBe(1000);
+    expect(targets[1].startMs).toBe(3000); // 2s of silence between them
+  });
+
+  it('emits targets in time order even when notes are stored out of order', () => {
+    const notes = [
+      { offset: 7, startSlot: 2, lengthSlots: 1 },
+      { offset: 0, startSlot: 0, lengthSlots: 1 },
+    ];
+    const targets = specToDefinition(spec({ notes, slotMs: 1000 })).generate({ anchorMidi: 60 });
+    expect(targets.map((t) => t.startMs)).toEqual([0, 2000]);
+  });
+
+  it('counts rests toward estSeconds — silence is part of the exercise', () => {
+    const notes = [
+      { offset: 0, startSlot: 0, lengthSlots: 1 },
+      { offset: 7, startSlot: 5, lengthSlots: 1 },
+    ];
+    expect(specToDefinition(spec({ notes, slotMs: 1000 })).estSeconds).toBe(6);
   });
 });
 
@@ -124,7 +179,7 @@ describe('custom-store round trip', () => {
   it('ignores corrupt entries rather than losing the whole list', () => {
     const good = createCustomExercise(baseInput)!;
     const raw = JSON.parse(window.localStorage.getItem('warble.custom-exercises.v1')!);
-    raw.push({ id: 'custom:bad' }); // missing steps/title/msPerNote
+    raw.push({ id: 'custom:bad' }); // missing notes/title/slotMs
     raw.push('not an object');
     window.localStorage.setItem('warble.custom-exercises.v1', JSON.stringify(raw));
 

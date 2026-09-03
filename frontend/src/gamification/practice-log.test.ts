@@ -109,3 +109,42 @@ describe('derived helpers', () => {
     expect(countCompletedOn(new Date(2026, 7, 9, 12))).toBe(2);
   });
 });
+
+describe('per-note detail', () => {
+  const base = {
+    timestamp: new Date().toISOString(),
+    exerciseId: 'note-hold-basic',
+    exerciseKind: 'note-hold' as const,
+    accuracyPct: 80,
+    durationMs: 1000,
+    xpEarned: 10,
+    minMidi: 60,
+    maxMidi: 64,
+  };
+
+  it('round-trips per-note register detail', () => {
+    recordPracticeEntry({
+      ...base,
+      perTarget: [{ midi: 60, achievedMidi: 60.1, hit: true, register: 'chest', registerPosition: 0.1 }],
+    });
+    expect(loadPracticeLog()[0].perTarget?.[0].register).toBe('chest');
+  });
+
+  it('accepts entries with no per-note detail, so older records stay valid', () => {
+    recordPracticeEntry(base);
+    expect(loadPracticeLog()[0].perTarget).toBeUndefined();
+    expect(loadPracticeLog()).toHaveLength(1);
+  });
+
+  it('prunes per-note detail from older entries but keeps the entries', () => {
+    // Detail is bounded; streak/XP history is not, since it derives from the
+    // summary fields only.
+    for (let i = 0; i < 60; i += 1) {
+      recordPracticeEntry({ ...base, perTarget: [{ midi: 60, achievedMidi: 60, hit: true }] });
+    }
+    const log = loadPracticeLog();
+    expect(log).toHaveLength(60);
+    expect(log[0].perTarget).toBeDefined();
+    expect(log[59].perTarget).toBeUndefined();
+  });
+});

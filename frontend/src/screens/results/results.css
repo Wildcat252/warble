@@ -89,3 +89,67 @@
   justify-content: center;
   flex-wrap: wrap;
 }
+
+/* Per-note breakdown. The styling groundwork for a note list already existed
+   in exercise-player.css but was never wired up; this is its own block since
+   it lives on a different screen and carries register as well as hit/miss. */
+.results-notes {
+  margin-top: var(--space-5);
+  text-align: left;
+}
+.results-notes__title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-2);
+}
+.results-notes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.results-note {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  font-size: var(--text-sm);
+}
+/* Hit/miss is a left stripe rather than a background wash, so it can't be
+   confused with the register colour on the right. */
+.results-note.is-hit { border-left: 3px solid var(--color-good); }
+.results-note.is-miss { border-left: 3px solid var(--color-bad); }
+
+.results-note__index {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.results-note__pitch { font-weight: var(--font-semibold); }
+.results-note__register {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.results-note__register[data-register="chest"] { color: #b45309; }
+.results-note__register[data-register="mix"] { color: var(--color-accent); }
+.results-note__register[data-register="head"] { color: #1a8a63; }
+
+.results-notes__summary {
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.results-notes__footnote {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}

@@ -11,21 +11,21 @@ beforeEach(() => {
 });
 
 describe('instrument setting', () => {
-  it('defaults to synth when nothing is stored', () => {
-    expect(loadInstrumentId()).toBe('synth');
-    expect(DEFAULT_INSTRUMENT).toBe('synth');
+  it('defaults to the sampled piano when nothing is stored', () => {
+    expect(loadInstrumentId()).toBe('piano');
+    expect(DEFAULT_INSTRUMENT).toBe('piano');
   });
 
   it('round-trips a stored choice', () => {
-    persistInstrumentId('violin-solo');
-    expect(loadInstrumentId()).toBe('violin-solo');
+    persistInstrumentId('piano');
+    expect(loadInstrumentId()).toBe('piano');
   });
 
-  it('migrates the legacy "piano" id to the struck variant', () => {
-    // 'piano' shipped before the voice list expanded; anyone who chose it
-    // should keep the sound they picked, not be silently reset to synth.
-    window.localStorage.setItem('warble.instrument.v1', 'piano');
-    expect(loadInstrumentId()).toBe('piano-struck');
+  it('migrates a retired synth voice id onto the sampled piano', () => {
+    // The oscillator voices were removed when the recorded piano landed;
+    // anyone who had chosen one must still get an audible cue.
+    window.localStorage.setItem('warble.instrument.v1', 'violin-solo');
+    expect(loadInstrumentId()).toBe('piano');
   });
 
   it('falls back to the default for an unrecognised stored value', () => {

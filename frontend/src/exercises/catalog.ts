@@ -90,9 +90,13 @@ export const guidedWarmup: ExerciseDefinition = {
   scoringStrategy: 'continuous-cents',
   title: 'Guided Warm-up',
   description: 'A 2-minute guided sequence: sirens, sustained notes, a scale, then a range stretch.',
-  difficulty: 'easy',
+  // Was 'easy'/20xp, the gentlest billing in the catalog, for what is in fact
+  // the longest exercise here: ~100 targets over two minutes spanning 17
+  // semitones, against 7 targets in 10s for the one labelled 'hard'. The
+  // rating and reward now match the work.
+  difficulty: 'medium',
   estSeconds: GUIDED_WARMUP_SECONDS,
-  xpBase: 20,
+  xpBase: 55,
   generate(ctx: ExerciseGenerationContext): ExerciseTargetNote[] {
     return warmupSegmentsToTargets(buildWarmupSequence(GUIDED_WARMUP_SECONDS, ctx.anchorMidi));
   },

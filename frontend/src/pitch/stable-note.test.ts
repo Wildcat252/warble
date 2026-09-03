@@ -120,3 +120,41 @@ describe('StableNoteDetector', () => {
     expect(mixResult.stableMidi).toBeCloseTo(60.0, 0);
   });
 });
+
+describe('hold durations longer than the smoothing window', () => {
+  /**
+   * Exercise definitions now drive holdDurationMs, and those hold times
+   * (1200ms for the built-in Note Hold) are far longer than the 320ms
+   * smoothing window. The window prunes old frames, but the candidate's start
+   * time is NOT re-derived once a candidate is established, so hold time keeps
+   * accumulating past the window length. If that ever regressed, every
+   * stable-hold exercise would become unscoreable.
+   */
+  const feed = (holdDurationMs: number, untilMs: number) => {
+    const detector = new StableNoteDetector({
+      minConfidence: 0.6,
+      clusteringToleranceCents: 35,
+      holdDurationMs,
+      smoothingWindowMs: 320,
+    });
+    let last = null;
+    for (let t = 0; t <= untilMs; t += 20) {
+      last = detector.pushFrame({ t, midi: 60 + (t % 40 === 0 ? 0.02 : -0.02), conf: 0.9 });
+    }
+    return last;
+  };
+
+  it('still reports a stable note after a 1200ms hold', () => {
+    expect(feed(1200, 1400)?.stableMidi).toBeCloseTo(60, 1);
+  });
+
+  it('withholds it until that full hold has elapsed', () => {
+    expect(feed(1200, 1000)?.stableMidi).toBeNull();
+  });
+
+  it('accepts a hold far longer than the old 2000ms clamp', () => {
+    // The clamp used to cut this to 2000ms, scoring a 5s hold as a 2s one.
+    expect(feed(5000, 4000)?.stableMidi).toBeNull();
+    expect(feed(5000, 5200)?.stableMidi).toBeCloseTo(60, 1);
+  });
+});

@@ -13,6 +13,7 @@ const VOICE_TYPE_KEY = `${STORAGE_PREFIX}.voice-type.v1`;
 const INSTRUMENT_KEY = `${STORAGE_PREFIX}.instrument.v1`;
 const TONE_LEAD_KEY = `${STORAGE_PREFIX}.tone-lead-ms.v1`;
 const LEAD_IN_KEY = `${STORAGE_PREFIX}.lead-in-ms.v1`;
+const REGISTER_DEBUG_KEY = `${STORAGE_PREFIX}.register-debug.v1`;
 
 /**
  * How far AHEAD of a note its reference tone sounds. Hearing the pitch only
@@ -126,6 +127,34 @@ export function persistInstrumentId(instrument: InstrumentId): void {
     storage.setItem(INSTRUMENT_KEY, instrument);
   } catch {
     // Non-critical: the player falls back to the default instrument.
+  }
+}
+
+/**
+ * Shows raw vocal-register feature values during exercises.
+ *
+ * A measurement tool, not a feature: it exists to decide whether register
+ * detection is viable on this voice and microphone before any classifier is
+ * built. Off by default and deliberately tucked under Settings → Advanced.
+ */
+export function loadRegisterDebugEnabled(): boolean {
+  const storage = getStorage();
+  if (!storage) return false;
+  try {
+    return storage.getItem(REGISTER_DEBUG_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function persistRegisterDebugEnabled(enabled: boolean): void {
+  const storage = getStorage();
+  if (!storage) return;
+  try {
+    if (enabled) storage.setItem(REGISTER_DEBUG_KEY, 'true');
+    else storage.removeItem(REGISTER_DEBUG_KEY);
+  } catch {
+    // Non-critical: the diagnostic readout stays hidden.
   }
 }
 

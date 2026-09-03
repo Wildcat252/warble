@@ -54,6 +54,18 @@ describe('guided-warmup', () => {
     const exercise = getExerciseById('guided-warmup')!;
     const targets = exercise.generate({ anchorMidi: 60 });
     expect(targets[0].startMs).toBe(0);
-    expect(targets.at(-1)?.endMs).toBe(exercise.estSeconds * 1000);
+    // Fits inside its billed duration rather than landing exactly on it —
+    // see the same note in warmup/session.test.ts.
+    expect(targets.at(-1)?.endMs).toBeLessThanOrEqual(exercise.estSeconds * 1000);
+    expect(targets.at(-1)?.endMs).toBeGreaterThan(exercise.estSeconds * 1000 - 2000);
+  });
+
+  it('is not billed as the gentlest exercise in the catalog', () => {
+    // It is the longest by far (~100 targets over two minutes, spanning 17
+    // semitones); it was rated 'easy' with the lowest xp of all four.
+    const warmup = getExerciseById('guided-warmup')!;
+    expect(warmup.difficulty).not.toBe('easy');
+    const others = EXERCISE_CATALOG.filter((e) => e.id !== warmup.id);
+    expect(warmup.xpBase).toBeGreaterThan(Math.min(...others.map((e) => e.xpBase)));
   });
 });

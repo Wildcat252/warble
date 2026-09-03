@@ -21,13 +21,20 @@ import { navigate } from '../../navigation/router';
 import { openAudioPreflightModal } from '../../services/audio-preflight';
 import {
   loadUserVoiceTypeId, persistUserVoiceTypeId,
-  loadInstrumentId, persistInstrumentId,
+  loadInstrumentId,
   loadToneLeadMs, persistToneLeadMs, MIN_TONE_LEAD_MS, MAX_TONE_LEAD_MS,
   loadLeadInMs, persistLeadInMs, MIN_LEAD_IN_MS, MAX_LEAD_IN_MS,
+  loadRegisterDebugEnabled, persistRegisterDebugEnabled,
 } from '../../services/user-settings';
+import { diagnosticJson, diagnosticCount, clearDiagnostics } from '../../pitch/register-diagnostics';
 import {
-  INSTRUMENTS, INSTRUMENT_FAMILIES, getInstrument, playInstrumentNote, type InstrumentId,
+  loadRawCalibration, modelSeparates, separationDb, describeSeparation,
+  clearRegisterCalibration,
+} from '../../pitch/register-calibration';
+import {
+  getInstrument, playInstrumentNote, type InstrumentId,
 } from '../../audio/instruments';
+import { preloadPianoSamples } from '../../audio/piano-samples';
 import { getAudioContext } from '../../services/audio-context';
 import { resolveAnchorMidi } from '../../exercises/anchor';
 import { VOICE_TYPES, getVoiceTypeById } from '../../pitch/voice-type';
@@ -74,25 +81,17 @@ function voiceTypeOptions(): string {
   ].join('');
 }
 
-/** Grouped by instrument family — a flat list of seven voices is hard to scan. */
-function instrumentOptions(): string {
-  const current = loadInstrumentId();
-  return INSTRUMENT_FAMILIES.map((family) => {
-    const opts = INSTRUMENTS
-      .filter((i) => i.family === family)
-      .map((i) => `<option value="${i.id}" ${current === i.id ? 'selected' : ''}>${i.label}</option>`)
-      .join('');
-    return `<optgroup label="${family}">${opts}</optgroup>`;
-  }).join('');
-}
-
 /** Length used when auditioning a voice in Settings — a typical exercise note. */
 const AUDITION_SECONDS = 2;
 
 function auditionInstrument(instrument: InstrumentId): void {
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') void ctx.resume();
-  playInstrumentNote(ctx, instrument, resolveAnchorMidi(), ctx.currentTime + 0.02, AUDITION_SECONDS);
+  // Await the sample set here too: without it the first press of "Hear it"
+  // would fall back to the synth tone and misrepresent the practice sound.
+  void preloadPianoSamples(ctx).then(() => {
+    playInstrumentNote(ctx, instrument, resolveAnchorMidi(), ctx.currentTime + 0.02, AUDITION_SECONDS);
+  });
 }
 
 function formatMs(ms: number): string {
@@ -100,6 +99,57 @@ function formatMs(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
   // Trim a trailing .0 so 2000ms reads "2s", not "2.0s".
   return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
+}
+
+/**
+ * Explains the state of register calibration, INCLUDING why it isn't working.
+ *
+ * Uses loadRawCalibration rather than loadRegisterCalibration so a stored-but-
+ * unusable calibration can be described instead of silently reading as "never
+ * set up" — the failure modes here (lines too close, microphone changed) are
+ * actionable, and hiding them would leave the singer stuck.
+ */
+function registerStatus(): string {
+  const cal = loadRawCalibration();
+  if (!cal) {
+    return `
+      <p class="settings-hint">
+        Not set up. The range test ends with two short patterns — five notes in chest voice,
+        five in head voice — which teaches Warble to tell your registers apart while you practise.
+      </p>
+      <p class="settings-hint">
+        It's an estimate, not a measurement: microphone, vowel and loudness all affect it.
+      </p>
+    `;
+  }
+
+  const sep = separationDb(cal.h1h2);
+  const usable = modelSeparates(cal.h1h2);
+  const deviceChanged = cal.deviceId !== loadBackendDeviceId();
+  const captured = new Date(cal.capturedAt);
+
+  return `
+    <p class="settings-hint">
+      ${usable
+    ? `Working — your chest and head voice measured <strong>${sep.toFixed(1)} dB apart</strong>
+         (${describeSeparation(sep)}), calibrated ${captured.toLocaleDateString()}.`
+    : `Not usable — the two patterns measured only ${sep.toFixed(1)} dB apart,
+         ${describeSeparation(sep)}. Retake the range test and make the head-voice set much lighter.`}
+    </p>
+    ${deviceChanged
+    ? `<p class="settings-note settings-note--warn">
+         You've changed microphone since calibrating. Register readings will be off until you redo it —
+         the measurement depends on the mic's frequency response.
+       </p>`
+    : ''}
+    ${cal.h1h2.slopeEstimated
+    ? ''
+    : `<p class="settings-hint">
+         Both patterns landed on nearly one pitch, so readings far from those notes are rougher.
+         Singing a wider spread next time would improve it.
+       </p>`}
+    <button type="button" class="btn btn-ghost" id="settings-clear-register">Clear calibration</button>
+  `;
 }
 
 function goalOptions(): string {
@@ -130,6 +180,7 @@ function engineSummary(): string {
 function render(container: HTMLElement): void {
   const voiceType = getVoiceTypeById(loadUserVoiceTypeId());
   const instrument = loadInstrumentId();
+  const registerDebug = loadRegisterDebugEnabled();
   const toneLeadMs = loadToneLeadMs();
   const leadInMs = loadLeadInMs();
 
@@ -166,12 +217,13 @@ function render(container: HTMLElement): void {
       </section>
 
       <section class="card settings-section">
+        <h2>Register detection</h2>
+        ${registerStatus()}
+      </section>
+
+      <section class="card settings-section">
         <h2>Practice sound</h2>
         <p class="settings-hint">The reference note you hear at the start of each note in an exercise.</p>
-        <label class="settings-field">
-          <span>Instrument</span>
-          <select id="settings-instrument">${instrumentOptions()}</select>
-        </label>
         <p class="settings-hint">
           ${getInstrument(instrument)?.description ?? ''}
           ${getInstrument(instrument)?.sustains === false
@@ -212,6 +264,16 @@ function render(container: HTMLElement): void {
         <div class="settings-advanced__body">
           ${engineSummary()}
           <hr class="settings-divider" />
+          <label class="settings-check">
+            <input type="checkbox" id="settings-register-debug" ${registerDebug ? 'checked' : ''} />
+            <span>Show vocal-register measurements during exercises</span>
+          </label>
+          <p class="settings-hint">
+            Diagnostic only. Displays the raw spectral numbers behind chest/head detection so they
+            can be checked against real singing — there is no classifier yet, so no label is shown.
+          </p>
+          <button type="button" class="btn btn-ghost" id="settings-copy-register">Copy register data (JSON)</button>
+          <hr class="settings-divider" />
           <p class="settings-hint">Clearing history removes all streaks, XP and session records. This cannot be undone.</p>
           <button type="button" class="btn btn-ghost settings-danger" id="settings-clear">Clear practice history</button>
         </div>
@@ -221,7 +283,11 @@ function render(container: HTMLElement): void {
 
   container.querySelector<HTMLSelectElement>('#settings-device')?.addEventListener('change', (ev) => {
     const value = (ev.target as HTMLSelectElement).value;
-    persistBackendDeviceId(value === '' ? null : Number.parseInt(value, 10));
+    // Store the NAME too: a PortAudio index moves when devices come and go,
+    // and the name is what the user actually chose. See audio-device.ts.
+    const id = value === '' ? null : Number.parseInt(value, 10);
+    const chosen = devices?.devices.find((d) => d.id === id);
+    persistBackendDeviceId(id, chosen?.name ?? '');
     showToast('Microphone updated. It applies to your next exercise.');
   });
 
@@ -233,15 +299,6 @@ function render(container: HTMLElement): void {
 
   container.querySelector<HTMLButtonElement>('#settings-open-range-test')?.addEventListener('click', () => {
     navigate('range-test');
-  });
-
-  container.querySelector<HTMLSelectElement>('#settings-instrument')?.addEventListener('change', (ev) => {
-    const value = (ev.target as HTMLSelectElement).value as InstrumentId;
-    persistInstrumentId(value);
-    // Audition it immediately — picking a practice sound blind, then only
-    // hearing it once an exercise is underway, makes the setting untestable.
-    auditionInstrument(value);
-    render(container); // refresh the description line
   });
 
   container.querySelector<HTMLButtonElement>('#settings-hear-instrument')?.addEventListener('click', () => {
@@ -288,6 +345,32 @@ function render(container: HTMLElement): void {
       .catch((err: unknown) => {
         showToast(`Couldn't change engine: ${String(err)}`, { variant: 'warning' });
       });
+  });
+
+  container.querySelector<HTMLButtonElement>('#settings-clear-register')?.addEventListener('click', () => {
+    clearRegisterCalibration();
+    showToast('Register calibration cleared.');
+    render(container);
+  });
+
+  container.querySelector<HTMLInputElement>('#settings-register-debug')?.addEventListener('change', (ev) => {
+    const enabled = (ev.target as HTMLInputElement).checked;
+    persistRegisterDebugEnabled(enabled);
+    // Starting a fresh measurement session: stale samples from a previous
+    // run would contaminate the medians used to compare chest against head.
+    if (enabled) clearDiagnostics();
+    showToast(enabled ? 'Register measurements will show during exercises.' : 'Register measurements hidden.');
+  });
+
+  container.querySelector<HTMLButtonElement>('#settings-copy-register')?.addEventListener('click', () => {
+    const count = diagnosticCount();
+    if (count === 0) {
+      showToast('No register data yet — sing through an exercise first.', { variant: 'warning' });
+      return;
+    }
+    void navigator.clipboard.writeText(diagnosticJson())
+      .then(() => showToast(`Copied ${count} frames of register data.`))
+      .catch(() => showToast("Couldn't copy — clipboard access was blocked.", { variant: 'warning' }));
   });
 
   container.querySelector<HTMLButtonElement>('#settings-clear')?.addEventListener('click', () => {

@@ -12,8 +12,22 @@ class PitchFrame:
     time_ms: float
     midi: float
     confidence: float
+    # Optional spectral features for vocal-register estimation, attached by
+    # the live pipeline only (see backend/audio/register_features.py). Kept
+    # LAST and defaulted because pitch_track.py and note_segmentation.py
+    # construct PitchFrame positionally.
+    #
+    # Typed loosely to keep this module dependency-free — it is imported by
+    # the offline transcription path, which has no interest in registers.
+    features: object | None = None
 
     def to_dict(self) -> dict[str, float]:
+        """
+        Transcription-domain serialisation. Deliberately EXCLUDES `features`:
+        this is the MusicXML/transcription contract and is typed
+        dict[str, float]. The live WebSocket payload is a separate,
+        hand-built contract in backend/audio/pipeline.py.
+        """
         return {
             "time_ms": self.time_ms,
             "midi": self.midi,

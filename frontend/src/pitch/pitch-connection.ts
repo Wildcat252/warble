@@ -11,8 +11,13 @@ import { parsePitchSocketMessage, reconnectDelayMs, type PitchFrame } from './so
 
 export interface PitchConnectionCallbacks {
   onFrame(frame: PitchFrame): void;
-  /** Fires once per successful (re)connection, when the server sends {"status":"connected"}. */
-  onConnected?(): void;
+  /**
+   * Fires once per successful (re)connection, when the server sends
+   * {"status":"connected"}. `registerFeatureVersion` is the backend's DSP
+   * version, or null on a backend without register features — calibration
+   * captured under a different version must not be trusted.
+   */
+  onConnected?(registerFeatureVersion: number | null): void;
 }
 
 export class PitchConnection {
@@ -61,7 +66,7 @@ export class PitchConnection {
       }
       const message = parsePitchSocketMessage(payload);
       if (message.kind === 'frame') this.callbacks.onFrame(message.frame);
-      else if (message.kind === 'status') this.callbacks.onConnected?.();
+      else if (message.kind === 'status') this.callbacks.onConnected?.(message.registerFeatureVersion);
     };
   }
 

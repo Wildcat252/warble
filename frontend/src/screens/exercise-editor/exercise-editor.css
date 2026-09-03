@@ -1,7 +1,11 @@
 .exercise-editor {
   padding: var(--space-6);
-  max-width: 760px;
+  max-width: 960px;
   margin: 0 auto;
+  /* Grid geometry lives here so the row/ruler/label tracks can't drift apart. */
+  --pr-col: 34px;
+  --pr-row: 22px;
+  --pr-label: 46px;
 }
 .exercise-editor__header h1 {
   font-size: var(--text-xl);
@@ -13,9 +17,7 @@
   margin-bottom: var(--space-5);
 }
 
-.editor-section {
-  margin-bottom: var(--space-5);
-}
+.editor-section { margin-bottom: var(--space-5); }
 .editor-section h2 {
   font-size: var(--text-md);
   font-weight: var(--font-semibold);
@@ -24,9 +26,186 @@
 .editor-hint {
   font-size: var(--text-sm);
   color: var(--color-text-muted);
-  margin-bottom: var(--space-3);
+  margin-top: var(--space-3);
+}
+.editor-error {
+  font-size: var(--text-xs);
+  color: var(--color-bad);
+  margin-top: var(--space-2);
 }
 
+/* ---- Toolbar ---- */
+.pr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.pr-toolbar__meta {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
+}
+.pr-toolbar__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.pr-toolbar__field input { width: 5rem; }
+.pr-toolbar__unit { color: var(--color-text-muted); }
+
+/* ---- Piano roll ----
+   One grid: a narrow label column plus a row track per pitch. The whole thing
+   scrolls vertically (±24 semitones is taller than any sensible viewport) and
+   horizontally when an exercise runs long. */
+.pr {
+  display: grid;
+  grid-template-columns: var(--pr-label) max-content;
+  align-items: stretch;
+  gap: 0;
+  max-height: 380px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.pr__ruler-label {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.pr__ruler {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.pr-tick {
+  height: var(--pr-row);
+  font-size: 9px;
+  color: var(--color-text-muted);
+  text-align: right;
+  padding-right: 3px;
+  border-left: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--pr-row);
+}
+.pr-tick.is-major { border-left-color: var(--color-border); }
+
+.pr-rowlabel {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  height: var(--pr-row);
+  line-height: var(--pr-row);
+  padding-right: var(--space-2);
+  text-align: right;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+}
+/* Octave Cs and the anchor row are the two reference points a singer scans for. */
+.pr-rowlabel.is-c { color: var(--color-text); font-weight: var(--font-semibold); }
+.pr-rowlabel.is-anchor { color: var(--color-primary); font-weight: var(--font-bold); }
+
+.pr-row {
+  display: grid;
+  height: var(--pr-row);
+}
+.pr-row.is-anchor { background: rgba(255, 107, 107, .07); }
+
+.pr-cell {
+  height: var(--pr-row);
+  padding: 0;
+  border: none;
+  border-right: 1px solid rgba(43, 36, 56, .06);
+  border-bottom: 1px solid rgba(43, 36, 56, .06);
+  background: transparent;
+  cursor: crosshair;
+}
+.pr-cell:nth-child(4n) { border-right-color: rgba(43, 36, 56, .16); }
+.pr-cell:hover { background: rgba(255, 107, 107, .16); }
+.pr-cell:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+
+.pr-note {
+  position: relative;
+  height: var(--pr-row);
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+  background: var(--color-good);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--font-semibold);
+  padding: 0 10px 0 5px;
+  cursor: pointer;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25);
+}
+.pr-note.is-selected {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-dark);
+  z-index: 1;
+}
+.pr-note:focus-visible { outline: 2px solid var(--color-text); outline-offset: 1px; }
+.pr-note__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Right-edge grab area for lengthening the note. */
+.pr-note__handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  background: linear-gradient(to right, transparent, rgba(0, 0, 0, .18));
+}
+
+/* ---- Selected-note inspector ---- */
+.pr-inspector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+.pr-inspector__pitch {
+  font-weight: var(--font-bold);
+  font-size: var(--text-md);
+  min-width: 3rem;
+}
+.pr-inspector__field { display: flex; align-items: center; gap: var(--space-2); }
+.pr-inspector__field input { width: 10rem; }
+.pr-inspector__len { display: flex; align-items: center; gap: var(--space-2); }
+.pr-inspector__len button { padding: 2px 10px; font-size: var(--text-md); line-height: 1.2; }
+.pr-inspector__len output {
+  min-width: 1.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-semibold);
+}
+.pr-inspector .editor-danger { margin-left: auto; }
+
+/* ---- Details form ---- */
 .editor-field {
   display: flex;
   align-items: center;
@@ -35,83 +214,9 @@
   margin-bottom: var(--space-3);
   font-size: var(--text-sm);
 }
-.editor-field > span {
-  flex-shrink: 0;
-}
+.editor-field > span { flex-shrink: 0; }
 .editor-field input,
-.editor-field select {
-  flex: 1;
-  max-width: 420px;
-}
-
-.editor-error {
-  font-size: var(--text-xs);
-  color: var(--color-danger, #d64545);
-  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
-}
-
-.editor-steps {
-  list-style: none;
-  margin: 0 0 var(--space-3);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.editor-step {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-.editor-step--invalid {
-  border-color: var(--color-danger, #d64545);
-}
-
-.editor-step__index {
-  font-size: var(--text-xs);
-  font-weight: var(--font-semibold);
-  color: var(--color-text-muted);
-  min-width: 1.5rem;
-  padding-bottom: var(--space-2);
-}
-
-.editor-step__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.editor-step__field--grow {
-  flex: 1;
-}
-.editor-step__field-label {
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-}
-.editor-step__offset {
-  width: 5.5rem;
-}
-
-/* Resolved note name — monospace so the column doesn't jitter as values change. */
-.editor-step__note {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  min-width: 3rem;
-  padding-bottom: var(--space-2);
-}
-
-.editor-step__remove {
-  font-size: var(--text-xs);
-  padding: var(--space-1) var(--space-2);
-}
-.editor-step__remove:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+.editor-field select { flex: 1; max-width: 420px; }
 
 .editor-actions {
   display: flex;
@@ -119,23 +224,36 @@
   gap: var(--space-3);
   margin-top: var(--space-5);
 }
-.editor-danger {
-  margin-left: auto;
-  color: var(--color-danger, #d64545);
-}
+.editor-danger { color: var(--color-bad); }
 
 @media (max-width: 640px) {
-  .editor-step {
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .editor-field {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-1);
-  }
-  .editor-field input,
-  .editor-field select {
-    max-width: none;
-  }
+  .exercise-editor { --pr-col: 28px; --pr-label: 40px; }
+  .editor-field { flex-direction: column; align-items: stretch; gap: var(--space-1); }
+  .editor-field input, .editor-field select { max-width: none; }
+  .pr-inspector .editor-danger { margin-left: 0; }
+}
+
+/* A column already holding a note can't take another — singing is monophonic.
+   Rendered as an inert div (not a disabled button) so it stays out of the tab
+   order and the accessibility tree entirely, rather than announcing an "add
+   note" action that does nothing. */
+.pr-cell.is-blocked {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 3px,
+    var(--color-border, rgba(0, 0, 0, 0.08)) 3px 4px
+  );
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Pitches outside the singer's voice type. Dimmed as a warning, still fully
+   usable — range-stretching exercises live out here on purpose. */
+.pr-row.is-out-of-range {
+  opacity: 0.45;
+}
+
+.pr-rowlabel.is-out-of-range {
+  opacity: 0.5;
+  font-style: italic;
 }

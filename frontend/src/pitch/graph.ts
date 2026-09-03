@@ -1,5 +1,8 @@
 import type { PitchFrame } from './socket';
-import { classifyGraphTraceColor, colorForMidi, type GraphTraceColor } from './graph-colors';
+import {
+  classifyGraphTraceColor, colorForMidi, colorForMidiAndRegister, traceWidthForRegister,
+  type GraphTraceColor,
+} from './graph-colors';
 import { midiToNoteName } from './note-name';
 
 export const GRAPH_MIDI_MIN = 36; // C2
@@ -50,6 +53,8 @@ interface GraphSample {
   midi: number;
   expectedMidi: number | null;
   color: GraphTraceColor;
+  /** SMOOTHED chest-to-head position, or null when register is unknown. */
+  registerPosition: number | null;
 }
 
 export interface PitchGraphOptions {
@@ -202,12 +207,18 @@ export class PitchGraphCanvas {
     window.addEventListener('resize', this.resize);
   }
 
-  pushFrame(frame: PitchFrame, expectedMidi: number | null): void {
+  /**
+   * `registerPosition` must be the SMOOTHED value, never the raw per-frame
+   * one — at ~21fps the raw number would make the trace strobe. Trailing and
+   * defaulted so existing callers and tests are unaffected.
+   */
+  pushFrame(frame: PitchFrame, expectedMidi: number | null, registerPosition: number | null = null): void {
     this.samples.push({
       tSec: frame.t / 1000,
       midi: frame.midi,
       expectedMidi,
       color: classifyGraphTraceColor(frame.midi, expectedMidi),
+      registerPosition,
     });
   }
 
@@ -410,11 +421,17 @@ export class PitchGraphCanvas {
     }
   }
 
-  /** Thick, round-capped, pitch-height-colored trace — history only, never ahead of the playhead. */
+  /**
+   * Thick, round-capped, pitch-height-coloured trace — history only, never
+   * ahead of the playhead. Lightness and width additionally encode vocal
+   * register when calibration is available; see graph-colors.ts for why hue
+   * was left alone.
+   */
   private drawTrace(nowSec: number, plotLeft: number, plotWidth: number, height: number): void {
     if (this.samples.length < 2) return;
 
-    this.ctx.lineWidth = TRACE_LINE_WIDTH;
+    // Width is set PER SEGMENT now rather than once, since register can change
+    // mid-phrase. Negligible cost at these sample counts.
     this.ctx.lineCap = 'round';
     this.ctx.lineJoin = 'round';
 
@@ -428,7 +445,10 @@ export class PitchGraphCanvas {
       const x2 = plotLeft + timeToGraphX(next.tSec, nowSec, plotWidth, this.opts.windowSeconds, DEFAULT_PLAYHEAD_RATIO);
       const y2 = midiToGraphY(next.midi, height, this.viewRangeMinMidi, this.viewRangeMaxMidi);
 
-      this.ctx.strokeStyle = colorForMidi(next.midi, this.viewRangeMinMidi, this.viewRangeMaxMidi);
+      this.ctx.strokeStyle = colorForMidiAndRegister(
+        next.midi, this.viewRangeMinMidi, this.viewRangeMaxMidi, next.registerPosition,
+      );
+      this.ctx.lineWidth = traceWidthForRegister(next.registerPosition, TRACE_LINE_WIDTH);
       this.ctx.beginPath();
       this.ctx.moveTo(x1, y1);
       this.ctx.lineTo(x2, y2);

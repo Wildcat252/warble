@@ -48,6 +48,16 @@
   text-align: center;
 }
 
+/* Only present while the pre-exercise key preview sounds, then removed. Sits
+ * inline with the status text rather than taking a row of its own, so the
+ * layout doesn't shift when it disappears. */
+.exercise-player__skip {
+  margin-left: var(--space-3, 0.75rem);
+  padding: 0.15rem 0.6rem;
+  font-size: var(--text-xs, 0.75rem);
+  vertical-align: middle;
+}
+
 /* Card frame around the graph — pitch/graph.ts renders its own light,
  * "note highway" style background (rainbow pitch scale, dotted grid), this
  * just gives it a bordered card frame consistent with the rest of the page. */
@@ -122,4 +132,48 @@
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   margin-bottom: var(--space-4);
+}
+
+/* Phase 0 register diagnostics — raw feature values, monospaced so the digits
+   don't jitter as they update ~21x/sec. Hidden unless enabled in Settings. */
+.exercise-player__register-debug {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  padding: var(--space-2) 0 0;
+  letter-spacing: -0.01em;
+}
+
+/* Register badge — a label plus a chest↔head position bar. Colour-coded, but
+   the text carries the meaning; the bar is decorative reinforcement. */
+.exercise-player__register {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  padding: var(--space-2) 0 0;
+}
+.exercise-player__register[data-register="chest"] { color: #b45309; }
+.exercise-player__register[data-register="mix"] { color: var(--color-accent); }
+.exercise-player__register[data-register="head"] { color: #1a8a63; }
+
+.exercise-player__register-bar {
+  position: relative;
+  flex: 0 0 96px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  /* Warm (chest) to cool (head), matching the label colours above. */
+  background: linear-gradient(to right, #f59e0b, #8b5cf6, #34d399);
+  opacity: 0.35;
+}
+.exercise-player__register-fill {
+  position: absolute;
+  top: -3px;
+  width: 4px;
+  height: 12px;
+  margin-left: -2px;
+  border-radius: var(--radius-full);
+  background: currentColor;
 }

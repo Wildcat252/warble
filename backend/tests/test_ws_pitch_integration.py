@@ -29,6 +29,17 @@ def client(isolated_pipeline: PlaybackPipeline) -> TestClient:
         yield test_client
 
 
+def _assert_handshake(msg) -> None:
+    """
+    The handshake carries the register DSP version alongside the status, so
+    clients can refuse calibration anchors captured under different feature
+    code. Asserted field-by-field rather than by exact dict equality, so
+    adding a future handshake field doesn't fail every test in this module.
+    """
+    assert msg["status"] == "connected"
+    assert isinstance(msg["registerFeatureVersion"], int)
+
+
 def _receive_json_with_timeout(ws, timeout_s: float = 7.0):
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(ws.receive_json)
@@ -40,12 +51,12 @@ def _receive_json_with_timeout(ws, timeout_s: float = 7.0):
 
 def test_ws_pitch_handshake_connected(client: TestClient) -> None:
     with client.websocket_connect("/ws/pitch") as ws:
-        assert _receive_json_with_timeout(ws, timeout_s=2.0) == {"status": "connected"}
+        _assert_handshake(_receive_json_with_timeout(ws, timeout_s=2.0))
 
 
 def test_ws_pitch_keepalive_ping_after_inactivity(client: TestClient) -> None:
     with client.websocket_connect("/ws/pitch") as ws:
-        assert _receive_json_with_timeout(ws, timeout_s=2.0) == {"status": "connected"}
+        _assert_handshake(_receive_json_with_timeout(ws, timeout_s=2.0))
         assert _receive_json_with_timeout(ws, timeout_s=7.0) == {"ping": True}
 
 
@@ -54,7 +65,7 @@ def test_injected_frame_matches_payload_contract(
     isolated_pipeline: PlaybackPipeline,
 ) -> None:
     with client.websocket_connect("/ws/pitch") as ws:
-        assert _receive_json_with_timeout(ws, timeout_s=2.0) == {"status": "connected"}
+        _assert_handshake(_receive_json_with_timeout(ws, timeout_s=2.0))
 
         isolated_pipeline.inject_frame(t_ms=123.456, midi=60.12349, conf=0.98765)
         payload = _receive_json_with_timeout(ws, timeout_s=2.0)
@@ -73,8 +84,8 @@ def test_injected_frame_fans_out_to_two_clients(
         ws1 = stack.enter_context(client.websocket_connect("/ws/pitch"))
         ws2 = stack.enter_context(client.websocket_connect("/ws/pitch"))
 
-        assert _receive_json_with_timeout(ws1, timeout_s=2.0) == {"status": "connected"}
-        assert _receive_json_with_timeout(ws2, timeout_s=2.0) == {"status": "connected"}
+        _assert_handshake(_receive_json_with_timeout(ws1, timeout_s=2.0))
+        _assert_handshake(_receive_json_with_timeout(ws2, timeout_s=2.0))
 
         isolated_pipeline.inject_frame(t_ms=50.04, midi=61.9999, conf=0.5004)
 
@@ -158,7 +169,7 @@ def test_ws_pitch_logs_client_disconnect(
     caplog.set_level("INFO")
 
     with client.websocket_connect("/ws/pitch") as ws:
-        assert _receive_json_with_timeout(ws, timeout_s=2.0) == {"status": "connected"}
+        _assert_handshake(_receive_json_with_timeout(ws, timeout_s=2.0))
 
     assert any(
         record.levelname == "INFO" and "disconnected by client" in record.message
@@ -186,7 +197,7 @@ def test_ws_pitch_logs_unexpected_exceptions(
     caplog.set_level("INFO")
 
     with client.websocket_connect("/ws/pitch") as ws:
-        assert _receive_json_with_timeout(ws, timeout_s=2.0) == {"status": "connected"}
+        _assert_handshake(_receive_json_with_timeout(ws, timeout_s=2.0))
 
     assert any(
         record.levelname == "ERROR" and "WebSocket pitch stream error" in record.message

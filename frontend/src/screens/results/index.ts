@@ -16,6 +16,7 @@ import { levelForTotalXp } from '../../gamification/xp';
 import { computeStreak } from '../../gamification/streaks';
 import { burstConfetti } from '../../gamification/confetti';
 import { getExerciseById } from '../../exercises/catalog';
+import { midiToNoteName } from '../../pitch/note-name';
 import './results.css';
 
 /** Celebrate a genuinely good run or a level-up — not every completion, or it stops meaning anything. */
@@ -46,6 +47,62 @@ function tweenXp(el: HTMLElement, to: number): void {
     else xpTweenRaf = null;
   };
   xpTweenRaf = requestAnimationFrame(step);
+}
+
+const REGISTER_LABEL: Record<string, string> = {
+  chest: 'chest', mix: 'mix', head: 'head',
+};
+
+/**
+ * Per-note breakdown, including which register each note was sung in.
+ *
+ * Register is omitted per note when it couldn't be measured (too few usable
+ * frames, or no calibration) rather than guessed — "—" is the honest cell.
+ * The whole block is skipped for entries written before per-note detail
+ * existed, and for older entries whose detail has been pruned.
+ */
+function renderPerNote(entry: PracticeEntry): string {
+  const notes = entry.perTarget;
+  if (!notes || notes.length === 0) return '';
+
+  const withRegister = notes.filter((n) => n.register !== undefined);
+  const summary = withRegister.length > 0
+    ? `<p class="results-notes__summary">${describeRegisterMix(withRegister)}</p>`
+    : '';
+
+  const rows = notes.map((n, i) => `
+    <li class="results-note ${n.hit ? 'is-hit' : 'is-miss'}">
+      <span class="results-note__index">${i + 1}</span>
+      <span class="results-note__pitch">${midiToNoteName(n.midi)}</span>
+      <span class="results-note__register" data-register="${n.register ?? ''}">
+        ${n.register ? REGISTER_LABEL[n.register] : '—'}${n.registerStable === false ? ' *' : ''}
+      </span>
+    </li>
+  `).join('');
+
+  return `
+    <div class="results-notes">
+      <h2 class="results-notes__title">Note by note</h2>
+      <ol class="results-notes__list">${rows}</ol>
+      ${summary}
+      ${notes.some((n) => n.registerStable === false)
+    ? '<p class="results-notes__footnote">* register changed partway through the note</p>'
+    : ''}
+    </div>
+  `;
+}
+
+/** One-line summary, e.g. "Mostly mix — 3 notes in chest". */
+function describeRegisterMix(notes: { register?: string }[]): string {
+  const counts = new Map<string, number>();
+  for (const n of notes) counts.set(n.register!, (counts.get(n.register!) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const [top, topCount] = ranked[0];
+  if (ranked.length === 1) return `All ${notes.length} notes in ${REGISTER_LABEL[top]}.`;
+  const rest = ranked.slice(1)
+    .map(([label, count]) => `${count} in ${REGISTER_LABEL[label]}`)
+    .join(', ');
+  return `Mostly ${REGISTER_LABEL[top]} (${topCount} of ${notes.length}) — ${rest}.`;
 }
 
 function render(container: HTMLElement, entry: PracticeEntry | null): void {
@@ -104,6 +161,8 @@ function render(container: HTMLElement, entry: PracticeEntry | null): void {
           <div class="progress-bar"><div class="progress-bar__fill" style="width:${fillPct}%"></div></div>
           <p class="results-progress__label">${progress.xpIntoLevel} / ${progress.xpForNextLevel} XP to level ${progress.level + 1}</p>
         </div>
+
+        ${renderPerNote(entry)}
 
         <div class="results-actions">
           <button type="button" class="btn btn-primary" data-nav="exercise-picker">Practice again</button>

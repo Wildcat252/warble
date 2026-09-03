@@ -14,18 +14,19 @@ Frames below CONFIDENCE_THRESHOLD are dropped, not emitted.
 
 from __future__ import annotations
 
-import time
-import threading
-import queue
 import logging
 import os
-from dataclasses import dataclass
+import queue
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from enum import Enum, auto
-from typing import Callable
-
-from backend.models.transcription import PitchFrame
 
 import numpy as np
+
+from backend.audio.register_features import RegisterFeatures, compute_register_features
+from backend.models.transcription import PitchFrame
 
 try:
     import torch
@@ -176,7 +177,7 @@ def _infer_torchcrepe(
     except ImportError:
         raise RuntimeError("torchcrepe is not installed. Run: uv pip install torchcrepe")
 
-    import torchaudio.functional as F  # noqa: PLC0415
+    import torchaudio.functional as F
 
     audio_tensor = torch.from_numpy(window).unsqueeze(0)  # (1, N)
     audio_16k = F.resample(audio_tensor, SAMPLE_RATE, CREPE_SAMPLE_RATE).to(device)
@@ -219,7 +220,7 @@ def _infer_pyin(
     librosa is already installed as a torchcrepe dependency — no extra install.
     Returns None if no pitch detected above threshold.
     """
-    import librosa  # noqa: PLC0415
+    import librosa
 
     # librosa.pyin returns (f0, voiced_flag, voiced_prob) arrays.
     # hop_length = frame_length = window length gives us a single frame.
@@ -315,6 +316,9 @@ class PitchPipeline:
         self._thread: threading.Thread | None = None
         self._running = False
         self._dropped_frames = 0
+        # Register extraction logs at most once — it runs ~21x/sec and a
+        # persistent failure would otherwise flood the log.
+        self._register_error_logged = False
 
     def start(self) -> None:
         if self._running:
@@ -380,8 +384,36 @@ class PitchPipeline:
 
     def _infer(self, window: np.ndarray, capture_time_ms: float) -> PitchFrame | None:
         if self._engine == Engine.TORCHCREPE:
-            return _infer_torchcrepe(window, self._device, capture_time_ms)
-        return _infer_pyin(window, capture_time_ms)
+            frame = _infer_torchcrepe(window, self._device, capture_time_ms)
+        else:
+            frame = _infer_pyin(window, capture_time_ms)
+        if frame is None:
+            return None
+        return replace(frame, features=self._register_features(window, frame))
+
+    def _register_features(
+        self, window: np.ndarray, frame: PitchFrame
+    ) -> RegisterFeatures | None:
+        """
+        Spectral features for vocal-register estimation.
+
+        Computed HERE rather than inside the engine functions for two reasons:
+        this seam sees the original 22050Hz window for both engines (torchcrepe
+        resamples internally), making the features engine-independent; and
+        _infer_pyin has a second caller in transcription_service.py whose
+        signature stays untouched this way.
+
+        Failures are swallowed deliberately. _worker's own except would drop
+        the entire pitch frame, and a nice-to-have must never be able to break
+        pitch detection.
+        """
+        try:
+            return compute_register_features(window, midi_to_hz(frame.midi), SAMPLE_RATE)
+        except Exception:
+            if not self._register_error_logged:
+                log.exception("Register feature extraction failed (pitch unaffected)")
+                self._register_error_logged = True
+            return None
 
     def _warmup(self) -> None:
         try:

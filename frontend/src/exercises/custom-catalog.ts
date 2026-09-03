@@ -7,7 +7,7 @@
  * custom-types.ts.
  */
 import type { ExerciseDefinition, ExerciseGenerationContext, ExerciseTargetNote } from './types';
-import type { CustomExerciseSpec } from './custom-types';
+import { sortedNotes, usedSlots, type CustomExerciseSpec } from './custom-types';
 import { loadCustomExerciseSpecs, getCustomExerciseSpec } from './custom-store';
 
 /**
@@ -21,12 +21,28 @@ import { loadCustomExerciseSpecs, getCustomExerciseSpec } from './custom-store';
  */
 const CUSTOM_EXERCISE_KIND = 'note-hold' as const;
 
+/**
+ * Difficulty multipliers. Without these `difficulty` was purely cosmetic on a
+ * custom exercise — the editor offered the choice, the picker displayed it,
+ * and it changed nothing — so marking a drill "hard" earned exactly what
+ * "easy" did. Built-in exercises have always paid more for harder work.
+ *
+ * Only future attempts are affected: practice-log entries store the xp they
+ * were awarded, and totals are summed from those stored values.
+ */
+const DIFFICULTY_XP_MULTIPLIER: Record<CustomExerciseSpec['difficulty'], number> = {
+  easy: 1,
+  medium: 1.25,
+  hard: 1.5,
+};
+
 /** XP for a custom exercise, scaled by length so a 3-note drill isn't worth as much as a 20-note one. */
 function xpForSpec(spec: CustomExerciseSpec): number {
-  const PER_STEP_XP = 4;
+  const PER_NOTE_XP = 4;
   const MIN_XP = 10;
-  const MAX_XP = 80; // capped so a 64-step exercise can't out-earn every built-in
-  return Math.max(MIN_XP, Math.min(MAX_XP, spec.steps.length * PER_STEP_XP));
+  const MAX_XP = 80; // capped so a long exercise can't out-earn every built-in
+  const base = spec.notes.length * PER_NOTE_XP * DIFFICULTY_XP_MULTIPLIER[spec.difficulty];
+  return Math.max(MIN_XP, Math.min(MAX_XP, Math.round(base)));
 }
 
 export function specToDefinition(spec: CustomExerciseSpec): ExerciseDefinition {
@@ -37,15 +53,19 @@ export function specToDefinition(spec: CustomExerciseSpec): ExerciseDefinition {
     title: spec.title,
     description: spec.description,
     difficulty: spec.difficulty,
-    estSeconds: Math.round((spec.steps.length * spec.msPerNote) / 1000),
+    // Grid span, not note count — rests are part of the exercise's length.
+    estSeconds: Math.round((usedSlots(spec.notes) * spec.slotMs) / 1000),
     xpBase: xpForSpec(spec),
     holdDurationMs: spec.scoringStrategy === 'stable-hold' ? spec.holdDurationMs : undefined,
     generate(ctx: ExerciseGenerationContext): ExerciseTargetNote[] {
-      return spec.steps.map((step, i) => ({
-        midi: ctx.anchorMidi + step.offset,
-        startMs: i * spec.msPerNote,
-        endMs: (i + 1) * spec.msPerNote,
-        label: step.label,
+      // Sorted because expectedTargetAtTime binary-searches on startMs and
+      // exerciseDurationMs reads the last element; the editor stores notes in
+      // whatever order they were drawn.
+      return sortedNotes(spec.notes).map((note) => ({
+        midi: ctx.anchorMidi + note.offset,
+        startMs: note.startSlot * spec.slotMs,
+        endMs: (note.startSlot + note.lengthSlots) * spec.slotMs,
+        label: note.label,
       }));
     },
   };

@@ -634,7 +634,7 @@ class TestWebSocketEndpoint:
         client = TestClient(app)
         with client.websocket_connect("/ws/pitch") as ws:
             msg = ws.receive_json()
-            assert msg == {"status": "connected"}
+            assert msg["status"] == "connected"
 
     def test_websocket_reconnects_cleanly(self):
         """AC4: closing and reopening the WebSocket must work without error."""
@@ -643,7 +643,7 @@ class TestWebSocketEndpoint:
             ws.receive_json()  # consume "connected"
         with client.websocket_connect("/ws/pitch") as ws:
             msg = ws.receive_json()
-            assert msg == {"status": "connected"}
+            assert msg["status"] == "connected"
 
 
 # ── Mock helpers ─────────────────────────────────────────────────────────────

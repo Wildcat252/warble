@@ -18,6 +18,22 @@ import type { ExerciseKind } from '../exercises/types';
 /** 'range-test' is not an ExerciseKind — the vocal range test is logged here too. */
 export type PracticeEntryKind = ExerciseKind | 'range-test';
 
+/**
+ * Per-target detail for one exercise. Optional and added late, so entries
+ * written before this existed stay valid — isEntry() validates only the
+ * required fields and does not reject unknown ones.
+ */
+export interface PracticeTargetResult {
+  midi: number;
+  achievedMidi: number | null;
+  hit: boolean;
+  register?: 'chest' | 'mix' | 'head';
+  /** 0 = chest, 1 = head. Kept alongside the label so a borderline note reads as borderline. */
+  registerPosition?: number;
+  /** False when the singer changed register mid-note — genuinely interesting information. */
+  registerStable?: boolean;
+}
+
 export interface PracticeEntry {
   id: string;
   /** ISO timestamp. Streak math converts these to LOCAL calendar days — see streaks.ts. */
@@ -29,11 +45,23 @@ export interface PracticeEntry {
   xpEarned: number;
   minMidi: number | null;
   maxMidi: number | null;
+  /**
+   * Only stored for recent entries — see MAX_PER_TARGET_ENTRIES. A per-note
+   * array on all 1000 entries would be a few hundred kB of localStorage for
+   * detail nobody scrolls back that far to read.
+   */
+  perTarget?: PracticeTargetResult[];
 }
 
 const STORAGE_KEY = `${STORAGE_PREFIX}.practice-log.v1`;
 /** Exercises are short and frequent, so this holds far more history than the old 250-session cap. */
 const MAX_ENTRIES = 1000;
+/**
+ * Entries older than this keep their summary but lose their per-note detail.
+ * Bounds localStorage growth without touching the streak/XP history, which is
+ * derived from the summary fields only.
+ */
+const MAX_PER_TARGET_ENTRIES = 50;
 
 const listeners = new Set<(entries: PracticeEntry[]) => void>();
 const memoryStorage = new Map<string, string>();
@@ -137,7 +165,15 @@ function newId(): string {
 
 export function recordPracticeEntry(entry: Omit<PracticeEntry, 'id'>): PracticeEntry {
   const complete: PracticeEntry = { ...entry, id: newId() };
-  write([complete, ...loadPracticeLog()].slice(0, MAX_ENTRIES));
+  const next = [complete, ...loadPracticeLog()]
+    .slice(0, MAX_ENTRIES)
+    // Strip per-note detail from older entries rather than dropping the
+    // entries themselves — streaks and XP derive from the summary fields and
+    // must keep the full history.
+    .map((e, i) => (i < MAX_PER_TARGET_ENTRIES || e.perTarget === undefined
+      ? e
+      : { ...e, perTarget: undefined }));
+  write(next);
   return complete;
 }
 

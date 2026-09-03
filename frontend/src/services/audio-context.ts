@@ -11,8 +11,10 @@
  *
  * The soundfont loader that used to live here was removed in the Warble
  * rework: it existed to play back a MusicXML score with piano samples.
- * Exercises play a single reference tone instead, synthesised by
- * audio/tone-player.ts, so there is no sample bank to fetch or fall back on.
+ * Exercises play a single reference tone instead. That tone is again a
+ * sampled piano, but its (much smaller) sample bank is owned by
+ * audio/piano-samples.ts rather than by this module — this one's only job is
+ * the shared context.
  */
 
 let ctx: AudioContext | null = null;

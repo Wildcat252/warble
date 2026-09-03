@@ -12,7 +12,7 @@
  */
 import { STORAGE_PREFIX } from '../branding';
 import {
-  CUSTOM_EXERCISE_SCHEMA_VERSION, CUSTOM_ID_PREFIX,
+  CUSTOM_EXERCISE_SCHEMA_VERSION, CUSTOM_ID_PREFIX, migrateSpec,
   type CustomExerciseSpec,
 } from './custom-types';
 
@@ -35,15 +35,25 @@ function getStorage(): Storage | null {
  */
 function isValidStoredSpec(value: unknown): value is CustomExerciseSpec {
   if (typeof value !== 'object' || value === null) return false;
-  const spec = value as Partial<CustomExerciseSpec>;
-  return (
-    typeof spec.id === 'string' && spec.id.startsWith(CUSTOM_ID_PREFIX)
-    && typeof spec.title === 'string'
-    && typeof spec.msPerNote === 'number'
-    && Array.isArray(spec.steps)
-    && spec.steps.every((s) => typeof s === 'object' && s !== null && typeof s.offset === 'number')
-  );
+  const spec = value as Record<string, unknown>;
+  if (typeof spec.id !== 'string' || !spec.id.startsWith(CUSTOM_ID_PREFIX)) return false;
+  if (typeof spec.title !== 'string') return false;
+
+  // Accept either schema version here; migrateSpec normalises v1 on the way
+  // out. Rejecting v1 outright would silently delete a user's exercises.
+  const v2 = Array.isArray(spec.notes) && typeof spec.slotMs === 'number'
+    && (spec.notes as unknown[]).every((n) => typeof n === 'object' && n !== null
+      && typeof (n as CustomExerciseNoteLike).offset === 'number'
+      && typeof (n as CustomExerciseNoteLike).startSlot === 'number'
+      && typeof (n as CustomExerciseNoteLike).lengthSlots === 'number');
+  const v1 = Array.isArray(spec.steps) && typeof spec.msPerNote === 'number'
+    && (spec.steps as unknown[]).every((s) => typeof s === 'object' && s !== null
+      && typeof (s as { offset?: unknown }).offset === 'number');
+
+  return v2 || v1;
 }
+
+interface CustomExerciseNoteLike { offset: unknown; startSlot: unknown; lengthSlots: unknown }
 
 /** Reads every stored spec, silently dropping any that no longer parse. */
 export function loadCustomExerciseSpecs(): CustomExerciseSpec[] {
@@ -55,7 +65,7 @@ export function loadCustomExerciseSpecs(): CustomExerciseSpec[] {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     // Drop rather than throw: one corrupt entry must not hide the others.
-    return parsed.filter(isValidStoredSpec);
+    return parsed.filter(isValidStoredSpec).map(migrateSpec);
   } catch {
     return [];
   }
@@ -93,8 +103,8 @@ export interface NewCustomExerciseInput {
   description: string;
   difficulty: CustomExerciseSpec['difficulty'];
   scoringStrategy: CustomExerciseSpec['scoringStrategy'];
-  steps: CustomExerciseSpec['steps'];
-  msPerNote: number;
+  notes: CustomExerciseSpec['notes'];
+  slotMs: number;
   holdDurationMs?: number;
 }
 

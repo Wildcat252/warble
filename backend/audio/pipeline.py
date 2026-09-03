@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 import threading
+import time
 from enum import Enum, auto
 
 from .capture import MicCapture
-from .pitch import PitchFrame, PitchPipeline, Engine, resolve_engine_runtime
+from .pitch import Engine, PitchFrame, PitchPipeline, resolve_engine_runtime
 
 log = logging.getLogger(__name__)
 
@@ -326,16 +326,32 @@ class PlaybackPipeline:
             "midi": round(frame.midi, 3),
             "conf": round(frame.confidence, 3),
         }
+        # Register features are OMITTED (not sent as nulls) when unavailable,
+        # so a frame without them is byte-identical to the pre-register
+        # contract. Older clients are unaffected, and the existing payload
+        # contract test stays valid unmodified.
+        features = getattr(frame, "features", None)
+        if features is not None:
+            payload.update(features.to_payload())
 
         self._fan_out_payload(payload)
 
-    def inject_frame(self, *, t_ms: float, midi: float, conf: float) -> None:
+    def inject_frame(
+        self,
+        *,
+        t_ms: float,
+        midi: float,
+        conf: float,
+        features: object | None = None,
+    ) -> None:
         """Inject a synthetic frame payload for tests without touching internals."""
         payload = {
             "t": round(t_ms, 1),
             "midi": round(midi, 3),
             "conf": round(conf, 3),
         }
+        if features is not None:
+            payload.update(features.to_payload())
         self._fan_out_payload(payload)
 
     def _fan_out_payload(self, payload: dict[str, float]) -> None:

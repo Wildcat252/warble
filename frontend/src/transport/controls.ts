@@ -14,9 +14,32 @@ export interface PlaybackCommandResponse {
   [key: string]: unknown;
 }
 
+/**
+ * Pulls the human-readable reason out of a FastAPI error body.
+ *
+ * /playback/start answers a bad device with a 400 whose `detail` carries the
+ * PortAudio message and the currently valid devices. Reporting only the status
+ * code turned a fixable "you picked a device that no longer exists" into an
+ * opaque "HTTP 500" the singer could do nothing with.
+ */
+async function describeFailure(res: Response, path: string): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    const detail = (body as { detail?: unknown }).detail;
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object') {
+      const { message } = detail as { message?: unknown };
+      if (typeof message === 'string') return message;
+    }
+  } catch {
+    // Non-JSON body (a bare 500 from an unhandled error): fall through.
+  }
+  return `Playback command failed: ${path} (HTTP ${res.status})`;
+}
+
 async function postPlaybackCommand(path: string): Promise<PlaybackCommandResponse> {
   const res = await fetch(path, { method: 'POST' });
-  if (!res.ok) throw new Error(`Playback command failed: ${path} (HTTP ${res.status})`);
+  if (!res.ok) throw new Error(await describeFailure(res, path));
   return await res.json() as PlaybackCommandResponse;
 }
 

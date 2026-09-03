@@ -33,14 +33,43 @@ Every pitch frame sent over `/ws/pitch` has this shape:
 |---|---|---|
 | `t` | `float` (ms) | Milliseconds since play-start. **Relative to the Play button press, not wall clock.** Range: 0 to end of piece. |
 | `midi` | `float` | MIDI note number with cent detail. `60.0` = C4 exactly. `60.5` = C4 + 50 cents. |
-| `conf` | `float` | Confidence 0.0–1.0. Frames with `conf < 0.6` are dropped in the backend before dispatch. The frontend will never receive a sub-threshold frame. |
+| `conf` | `float` | Confidence 0.0–1.0. Frames below `CONFIDENCE_THRESHOLD` are dropped in the backend before dispatch, so the frontend never receives a sub-threshold frame. The threshold is **0.25**, set from measured separation between real singing and an ambient room — see the rationale block in `backend/audio/pitch.py`. |
+
+### Optional register fields
+
+A frame MAY additionally carry vocal-register features (see
+`backend/audio/register_features.py`). They are present only when the window
+was measurable, and the keys are **omitted entirely rather than sent as
+`null`** — so a frame without them is byte-identical to the three-key contract
+above, and older clients are unaffected.
+
+```json
+{ "t": 1234.5, "midi": 60.312, "conf": 0.847,
+  "h1h2": 6.2, "tilt": 18.4, "hfrac": 0.99, "nh": 8, "lvl": -25.3 }
+```
+
+| Field | Type | Semantics |
+|---|---|---|
+| `h1h2` | `float` (dB) | Amplitude difference between the first two harmonics. Low/negative = spectrally rich (chest-like); high = fundamental-dominated (head-like). |
+| `tilt` | `float` (dB) | Spectral tilt across f0-relative bands. Higher = more fundamental-dominated. |
+| `hfrac` | `float` | Fraction of in-band power inside the harmonic lobes. A **validity gate**, not a classification feature — low values mean the reading is meaningless. |
+| `nh` | `int` | Harmonics measured below Nyquist. |
+| `lvl` | `float` (dBFS) | RMS level. Not for classification; exposes the loudness confound. |
+
+Frames are absent when f0 is below 70 Hz, when an octave error is suspected,
+or when the frame is too breathy to measure. The frontend treats a missing set
+as "no register information for this frame", which is always valid.
 
 Two non-frame messages may also appear on the WebSocket:
 
 ```json
-{ "status": "connected" }   // sent once on connection accept
-{ "ping": true }             // keepalive, sent every 5s when paused
+{ "status": "connected", "registerFeatureVersion": 1 }   // sent once on connection accept
+{ "ping": true }                                          // keepalive, sent every 5s when paused
 ```
+
+`registerFeatureVersion` identifies the register DSP. Stored calibration is
+only valid for the version it was captured under; a client must discard
+calibration whose version no longer matches.
 
 The frontend must silently ignore both. Do not treat them as pitch data.
 

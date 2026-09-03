@@ -8,16 +8,25 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+import sounddevice as sd
+import uvicorn
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-import uvicorn
 
+from .audio.capture import default_input_device_id, list_input_devices
+from .audio.pipeline import _CLIENT_QUEUE_MAXSIZE, PlaybackPipeline
+from .audio.register_features import REGISTER_FEATURE_VERSION
+from .models.session import SessionSaveRequest
 from .score.parser import parse_musicxml
 from .score.upload import persist_upload_to_temp
-from .audio.capture import list_input_devices, default_input_device_id
-from .audio.pipeline import PlaybackPipeline, _CLIENT_QUEUE_MAXSIZE
-from .models.session import SessionSaveRequest
 from .session.store import list_sessions, read_session, save_session
 from .transcription_service import (
     TranscriptionError,
@@ -174,9 +183,34 @@ async def playback_start(device_id: int | None = None) -> JSONResponse:
 
     Query param: device_id (optional) — sounddevice input device index.
     Omit to use the system default.
+
+    A bad device_id returns 400 with the reason and the currently valid
+    devices, NOT a bare 500. PortAudio indices shift whenever a device is
+    connected or removed (plugging in an iPhone renumbers everything after
+    it), so a client can hold an index that has since come to mean a
+    different device — pointing it at an output-only one raises
+    "Invalid number of channels [PaErrorCode -9998]". The caller needs to
+    know which id was rejected and what it can pick instead in order to
+    recover on its own.
     """
     loop = asyncio.get_event_loop()
-    _pipeline.start(device_id=device_id, loop=loop)
+    try:
+        _pipeline.start(device_id=device_id, loop=loop)
+    except sd.PortAudioError as exc:
+        # Leave no half-started capture behind for the next attempt.
+        _pipeline.stop()
+        valid = [{"id": d.id, "name": d.name} for d in list_input_devices()]
+        logger.warning("playback start rejected device_id=%s: %s", device_id, exc)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_device",
+                "message": str(exc),
+                "requested_device_id": device_id,
+                "valid_devices": valid,
+                "default_device_id": default_input_device_id(),
+            },
+        ) from exc
     return JSONResponse({"state": _pipeline.state.name, "t_ms": _pipeline.elapsed_ms})
 
 
@@ -260,7 +294,22 @@ async def pitch_stream(websocket: WebSocket) -> None:
     Frame format: {"t": float, "midi": float, "conf": float}
       t    — ms since playback start (aligned with AudioContext.currentTime * 1000)
       midi — MIDI float with cent detail (e.g. 60.3 = C4 + 30 cents)
-      conf — confidence 0.0–1.0 (frames below 0.6 are dropped before reaching here)
+      conf — confidence 0.0–1.0 (frames below CONFIDENCE_THRESHOLD, currently
+             0.25, are dropped before reaching here — see audio/pitch.py for
+             the measured rationale)
+
+    Frames MAY additionally carry vocal-register features, present only when
+    the window was measurable (see audio/register_features.py). The keys are
+    omitted entirely rather than sent as null, so a frame without them matches
+    the original three-key contract exactly:
+      h1h2  — dB difference between the first two harmonics
+      tilt  — dB spectral tilt across f0-relative bands
+      hfrac — fraction of in-band power in the harmonic lobes (validity gate)
+      nh    — harmonics measured below Nyquist
+      lvl   — RMS in relative dBFS
+
+    The handshake reports `registerFeatureVersion` so a client can refuse
+    calibration data captured under different DSP.
 
     The client receives frames only during PLAYING state.
     Connection survives pause/resume — no reconnect needed.
@@ -268,7 +317,9 @@ async def pitch_stream(websocket: WebSocket) -> None:
     (e.g. during PAUSED state) so the connection stays open.
     """
     await websocket.accept()
-    await websocket.send_json({"status": "connected"})
+    await websocket.send_json(
+        {"status": "connected", "registerFeatureVersion": REGISTER_FEATURE_VERSION}
+    )
 
     q: asyncio.Queue = asyncio.Queue(maxsize=_CLIENT_QUEUE_MAXSIZE)
     _pipeline.add_client(q)
@@ -278,7 +329,7 @@ async def pitch_stream(websocket: WebSocket) -> None:
             try:
                 frame = await asyncio.wait_for(q.get(), timeout=_WS_KEEPALIVE_S)
                 await websocket.send_json(frame)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # No frames for _WS_KEEPALIVE_S seconds (e.g. paused) — send ping
                 await websocket.send_json({"ping": True})
     except WebSocketDisconnect:
