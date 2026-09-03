@@ -52,8 +52,12 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          slug: leonarduk/sing-attune
-        # No token needed - org uses tokenless uploads
+          slug: Wildcat252/warble
+        # Was leonarduk/sing-attune: this fork was uploading its coverage to
+        # the UPSTREAM project's Codecov, not its own. Tokenless upload worked
+        # there because that org allows it; if uploads start failing here, add
+        # a CODECOV_TOKEN secret for this repository.
+        continue-on-error: true
 
   frontend-test:
     name: Frontend tests (Vitest)
