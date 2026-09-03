@@ -1,4 +1,4 @@
-appId: com.singattune.app
+appId: com.warble.desktop
 productName: sing-attune
 artifactName: sing-attune-${version}-gpu-${arch}.${ext}
 directories:

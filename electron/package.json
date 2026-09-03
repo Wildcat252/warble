@@ -14,7 +14,7 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.leonarduk.sing-attune",
+    "appId": "com.warble.desktop",
     "productName": "sing-attune",
     "files": [
       "main.js",
