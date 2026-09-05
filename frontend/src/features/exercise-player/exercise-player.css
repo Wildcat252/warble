@@ -68,21 +68,14 @@
   gap: var(--space-3);
 }
 
+/* Target is the only readout now; the live "Detected" note was removed. It
+   restated what the graph already shows, a frame behind and ~21 times a
+   second, and drew the eye off the trace it was describing. */
 .exercise-player__readouts {
   display: flex;
-  justify-content: space-between;
   gap: var(--space-4);
   font-weight: var(--font-semibold);
   font-size: var(--text-md);
-}
-.exercise-player__detected[data-tone='good'] {
-  color: var(--color-good);
-}
-.exercise-player__detected[data-tone='off'] {
-  color: var(--color-warn);
-}
-.exercise-player__detected[data-tone='none'] {
-  color: var(--color-text-muted);
 }
 
 .exercise-player__graph {

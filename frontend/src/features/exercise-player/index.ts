@@ -33,7 +33,7 @@ import {
   DEFAULT_STABLE_NOTE_SETTINGS, StableNoteDetector, type StableNoteState,
 } from '../../pitch/stable-note';
 import type { PitchFrame } from '../../pitch/socket';
-import { centsOffPitch, GREEN_CENTS_THRESHOLD, MIN_CONFIDENCE_FOR_DOT } from '../../pitch/accuracy';
+import { GREEN_CENTS_THRESHOLD } from '../../pitch/accuracy';
 import { midiToFrequency, midiToNoteName } from '../../pitch/note-name';
 import { preloadPianoSamples } from '../../audio/piano-samples';
 import { playKeyPreview, type KeyPreviewHandle } from '../../audio/key-preview';
@@ -56,7 +56,6 @@ import './exercise-player.css';
 interface Els {
   status: HTMLElement;
   targetReadout: HTMLElement;
-  detectedReadout: HTMLElement;
   progressDots: HTMLElement;
   graphContainer: HTMLElement;
   summary: HTMLElement;
@@ -228,7 +227,6 @@ function renderShell(container: HTMLElement, def: ExerciseDefinition): void {
       <div class="exercise-player__graph-card card">
         <div class="exercise-player__readouts">
           <div class="exercise-player__target" id="ex-target">Target: —</div>
-          <div class="exercise-player__detected" id="ex-detected">Detected: —</div>
         </div>
         <!-- Register badge. aria-live is deliberately OFF for the same reason
              as the diagnostics below: it updates ~21x/sec. Register reaches
@@ -247,7 +245,6 @@ function renderShell(container: HTMLElement, def: ExerciseDefinition): void {
   els = {
     status: container.querySelector('#ex-status')!,
     targetReadout: container.querySelector('#ex-target')!,
-    detectedReadout: container.querySelector('#ex-detected')!,
     registerDebug: container.querySelector('#ex-register-debug')!,
     registerBadge: container.querySelector('#ex-register')!,
     progressDots: container.querySelector('#ex-progress-dots')!,
@@ -320,22 +317,6 @@ function updateTargetReadout(): void {
   const target = targets[activeTargetIndex];
   const label = target.label ? ` (${target.label})` : '';
   els.targetReadout.textContent = `Target: ${midiToNoteName(target.midi)}${label}`;
-}
-
-function updateDetectedReadout(frame: PitchFrame, expectedMidi: number | null): void {
-  if (!els) return;
-  if (frame.conf < MIN_CONFIDENCE_FOR_DOT) {
-    els.detectedReadout.textContent = 'Detected: —';
-    els.detectedReadout.dataset.tone = 'none';
-    return;
-  }
-  els.detectedReadout.textContent = `Detected: ${midiToNoteName(frame.midi)}`;
-  if (expectedMidi === null) {
-    els.detectedReadout.dataset.tone = 'none';
-    return;
-  }
-  const cents = Math.abs(centsOffPitch(frame.midi, expectedMidi));
-  els.detectedReadout.dataset.tone = cents <= GREEN_CENTS_THRESHOLD ? 'good' : 'off';
 }
 
 /**
@@ -462,7 +443,6 @@ function handleFrame(frame: PitchFrame): void {
   // shades the stroke by it and a sample cannot be re-coloured afterwards.
   const smoothedRegister = updateRegisterBadge(frame);
   graph.pushFrame(frame, expectedMidi, smoothedRegister);
-  updateDetectedReadout(frame, expectedMidi);
   recordDiagnosticFrame(frame);
   updateRegisterDebug(frame);
 
